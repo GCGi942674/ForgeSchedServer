@@ -14,7 +14,7 @@ From the repository root (C++17 compiler, CMake >= 3.15.2 and pthreads required)
 ```sh
 make debug
 make test BUILD_TYPE=Debug
-(cd build/linux && ctest -R 'test_worker_network|test_server_process' --repeat-until-fail 30 --output-on-failure)
+(cd build && ctest -R 'test_worker_network|test_server_process' --repeat-until-fail 30 --output-on-failure)
 ```
 
 JSON is supplied by `third_party/nlohmann/json.hpp`. Build directories can be
@@ -78,10 +78,11 @@ process. Legacy Echo tests retain their existing fixed ports.
 
 ## Build entry point and internal toolchain
 
-`make` builds Release; `make debug` builds Debug. Both default to `build/linux`.
+`make` builds Release; `make debug` builds Debug. Both default directly to `build`.
+The default parallel job count is 32; override `PARALLEL_JOBS` if needed.
 `make clean` cleans generated targets there but retains the cache; it succeeds
-without doing anything when that directory has not been configured. Override
-`BUILD_DIR=build` explicitly if using an older root-level build tree.
+without doing anything when that directory has not been configured. Executables
+are placed in `build/bin` and libraries in `build/lib`.
 
 The Makefile prefers `/home/xshare/scripts/bin/cmake-3.15.2/bin/cmake` when that
 file exists, otherwise it uses `cmake` from PATH. Interactive shell aliases are
@@ -95,8 +96,9 @@ make clean CMAKE=/home/xshare/scripts/bin/cmake-3.15.2/bin/cmake
 
 CTest defaults to the executable beside the selected CMake; override `CTEST`
 if necessary. The commands avoid newer CTest `--test-dir` and `--repeat` syntax.
-Use separate build directories when comparing CMake versions, for example
-`BUILD_DIR=build/cmake315`. Never reuse caches copied from another machine/path.
+The former `build/linux` and `build/cmake315` directories were verification
+artifacts, not required project layouts. Normal builds do not create them.
+Never reuse caches copied from another machine/path.
 The CMake baseline does not imply compiler/standard-library compatibility:
 the project still requires C++17, including `std::filesystem` support.
 

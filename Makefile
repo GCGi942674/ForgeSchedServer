@@ -4,7 +4,7 @@ INTERNAL_CMAKE := /home/xshare/scripts/bin/cmake-3.15.2/bin/cmake
 CMAKE ?= $(if $(wildcard $(INTERNAL_CMAKE)),$(INTERNAL_CMAKE),cmake)
 CTEST ?= $(if $(findstring /,$(CMAKE)),$(dir $(abspath $(CMAKE)))ctest,$(shell command -v "$(CMAKE)" 2>/dev/null | sed 's@[^/]*$$@ctest@'))
 PARALLEL_JOBS ?= 32
-BUILD_DIR ?= build/linux
+BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 CMAKE_ARGS ?=
 CTEST_ARGS ?=
@@ -43,5 +43,5 @@ help:
 	@echo "clean removes generated targets, retaining the cache and source files."
 	@echo "CMAKE: internal 3.15.2 path if present, otherwise cmake from PATH"
 	@echo "CTEST: defaults to the selected CMake executable's sibling"
-	@echo "BUILD_DIR: build/linux; BUILD_TYPE: Release; PARALLEL_JOBS: 4"
+	@echo "BUILD_DIR: build; BUILD_TYPE: Release; PARALLEL_JOBS: 32"
 	@echo "CMAKE_ARGS and CTEST_ARGS: extra configure/test arguments"
