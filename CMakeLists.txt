@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15.2)
 
-project(galxcore LANGUAGES CXX)
+project(ForgeSched LANGUAGES CXX)
 
 # =====================
 # C++ 标准
@@ -22,11 +22,16 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+# Parallelism is controlled by make PARALLEL_JOBS or cmake --build --parallel.
+# CMAKE_BUILD_PARALLEL_LEVEL is an environment variable, not a cache variable.
+
 # =====================
 # Debug 编译选项
 # =====================
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_compile_options(-g -O0)
+  add_compile_options(-g)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+  add_compile_options(-O3 -DNDEBUG)
 endif()
 
 # =====================
@@ -35,4 +40,7 @@ endif()
 add_subdirectory(common)
 add_subdirectory(server)
 add_subdirectory(client)
-add_subdirectory(tests)
+include(CTest)
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()

@@ -2,8 +2,10 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 
 std::vector<char> MessageCodec::encode(const std::string &msg) {
+  if (msg.size() > kMaxBodyLenght) throw std::length_error("protocol frame too large");
   uint32_t len = static_cast<uint32_t>(msg.size());
   uint32_t net_len = htonl(len);
 

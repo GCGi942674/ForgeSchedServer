@@ -1,5 +1,6 @@
 #include "EchoClient.h"
 #include "Logging.h"
+#include <sstream>
 #include "protocol/message_codec.h"
 #include "Utils.h"
 #include <arpa/inet.h>
@@ -12,7 +13,7 @@ EchoClient::EchoClient(const std::string &host, int port)
 
 EchoClient::~EchoClient() {
   this->stopHeartbeat();
-  this->markDisconnected();
+  this->resetConnection();
 }
 
 bool EchoClient::connect() {
@@ -119,7 +120,7 @@ void EchoClient::markDisconnected() {
   this->state_ = ClientState::Disconnected;
   this->inputBuffer_.retrieveAll();
   if (had_connection) {
-    LOG_WARN("client marked disconnected");
+    LOG_WARN(ForgeSched::LogModule::NETWORK, "client marked disconnected");
   }
 }
 
@@ -195,7 +196,11 @@ void EchoClient::heartbeatLoop() {
       this->heartbeat_fail_count_ = 0;
     } else {
       ++this->heartbeat_fail_count_;
-      LOG_WARN("heartbeat failed, count=" << this->heartbeat_fail_count_);
+      {
+        std::ostringstream oss;
+        oss << "heartbeat failed, count=" << this->heartbeat_fail_count_;
+        LOG_WARN(ForgeSched::LogModule::NETWORK, oss.str());
+      }
 
       if (this->heartbeat_fail_count_ >= this->heartbeat_fail_threshold_) {
         this->markDisconnected();
@@ -217,23 +222,27 @@ bool EchoClient::sendPingUnlocked() {
     std::string response;
     auto encoded = MessageCodec::encode("__ping__");
 
-    LOG_INFO("heartbeat ping sending");
+    LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat ping sending");
 
     if (!this->writePacket(encoded)) {
-      LOG_INFO("heartbeat send failed");
+      LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat send failed");
       continue;
     }
 
     if (!this->readResponse(response)) {
-      LOG_INFO("heartbeat recv failed");
+      LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat recv failed");
       continue;
     }
 
-    LOG_INFO("heartbeat pong received");
+    LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat pong received");
     return response == "__pong__";
   }
 
-  LOG_WARN("heartbeat failed, count=" << this->heartbeat_fail_count_);
+  {
+    std::ostringstream oss;
+    oss << "heartbeat failed, count=" << this->heartbeat_fail_count_;
+    LOG_WARN(ForgeSched::LogModule::NETWORK, oss.str());
+  }
 
   return false;
 }

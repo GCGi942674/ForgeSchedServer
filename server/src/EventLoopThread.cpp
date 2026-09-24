@@ -21,8 +21,11 @@ EventLoop *EventLoopThread::startLoop() {
 
 void EventLoopThread::stop() {
   this->exiting_ = true;
-  if (this->loop_ != nullptr) {
-    this->loop_->quit();
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (this->loop_ != nullptr) {
+      this->loop_->quit();
+    }
   }
   if (this->thread_.joinable()) {
     this->thread_.join();

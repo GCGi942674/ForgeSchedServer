@@ -13,6 +13,9 @@ CMakeCache.txt
 *.a
 *.so
 *.txt
+!CMakeLists.txt
+!**/CMakeLists.txt
+logs/
 client_app
 server_app
 

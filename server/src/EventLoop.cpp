@@ -4,19 +4,25 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <sys/eventfd.h>
 #include <unistd.h>
+
+using namespace ForgeSched;
 
 EventLoop::EventLoop() : epfd_(-1), wakeup_fd_(-1), quit_(false) {
   this->epfd_ = epoll_create1(0);
   if (this->epfd_ < 0) {
-    LOG_ERROR("epoll_create1 failed, errno=" << errno
-                                             << ", err=" << strerror(errno));
+    std::ostringstream oss;
+    oss << "epoll_create1 failed, errno=" << errno << ", err=" << strerror(errno);
+    LOG_ERROR(LogModule::NETWORK, oss.str());
     std::abort();
   }
   this->wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (this->wakeup_fd_ < 0) {
-    LOG_ERROR("eventfd failed, errno=" << errno << ", err=" << strerror(errno));
+    std::ostringstream oss;
+    oss << "eventfd failed, errno=" << errno << ", err=" << strerror(errno);
+    LOG_ERROR(LogModule::NETWORK, oss.str());
     std::abort();
   }
 
@@ -24,17 +30,17 @@ EventLoop::EventLoop() : epfd_(-1), wakeup_fd_(-1), quit_(false) {
   ev.data.fd = this->wakeup_fd_;
   ev.events = EPOLLIN;
   if (epoll_ctl(this->epfd_, EPOLL_CTL_ADD, this->wakeup_fd_, &ev) < 0) {
-    LOG_ERROR("epoll_ctl add wakeup fd failed, errno=" << errno << ", err="
-                                                       << strerror(errno));
+    std::ostringstream oss;
+    oss << "epoll_ctl add wakeup fd failed, errno=" << errno << ", err=" << strerror(errno);
+    LOG_ERROR(LogModule::NETWORK, oss.str());
     std::abort();
   }
-  LOG_INFO("event loop initialized, epfd=" << this->epfd_ << ", wakeup_fd="
-                                           << this->wakeup_fd_);
+  std::ostringstream oss;
+  oss << "event loop initialized, epfd=" << this->epfd_ << ", wakeup_fd=" << this->wakeup_fd_;
+  LOG_INFO(LogModule::NETWORK, oss.str());
 }
 
 EventLoop::~EventLoop() {
-  LOG_INFO("event loop destroying, epfd=" << this->epfd_ << ", wakeup_fd="
-                                          << this->wakeup_fd_);
   if (this->epfd_ != -1) {
     close(this->epfd_);
     this->epfd_ = -1;
@@ -46,7 +52,8 @@ EventLoop::~EventLoop() {
 }
 
 void EventLoop::loop() {
-  LOG_INFO("event loop started");
+  current_loop_ = this;
+  LOG_INFO(LogModule::NETWORK, "event loop started");
   epoll_event events[1024];
   while (!this->quit_.load()) {
     int timeout_ms = this->getPollTimeoutMs();
@@ -57,12 +64,17 @@ void EventLoop::loop() {
 
         continue;
       }
-      LOG_ERROR("epoll_wait failed, errno=" << errno
-                                            << ", err=" << strerror(errno));
+      std::ostringstream oss;
+      oss << "epoll_wait failed, errno=" << errno << ", err=" << strerror(errno);
+      LOG_ERROR(LogModule::NETWORK, oss.str());
       break;
     }
 
-    LOG_DEBUG("epoll_wait returned nready=" << nready);
+    {
+      std::ostringstream oss;
+      oss << "epoll_wait returned nready=" << nready;
+      LOG_DEBUG(LogModule::NETWORK, oss.str());
+    }
 
     for (int i = 0; i < nready; ++i) {
       int fd = events[i].data.fd;
@@ -75,22 +87,28 @@ void EventLoop::loop() {
 
       auto it = this->callbacks_.find(fd);
       if (it != this->callbacks_.end()) {
-        it->second(event);
+        auto callback = it->second;
+        callback(event);
       } else {
-        LOG_WARN("callback not found for fd=" << fd);
+        std::ostringstream oss;
+        oss << "callback not found for fd=" << fd;
+        LOG_WARN(LogModule::NETWORK, oss.str());
       }
     }
 
     this->handleExpiredTimers();
     this->doPending();
   }
-  LOG_INFO("event loop exited");
+  LOG_INFO(LogModule::NETWORK, "event loop exited");
+  current_loop_ = nullptr;
 }
 
 void EventLoop::quit() {
-  LOG_INFO("event loop quit requested");
-  this->quit_.store(true);
-  this->queueInLoop([]() {});
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    quit_.store(true);
+  }
+  wakeup();
 }
 
 void EventLoop::addFd(int fd, uint32_t events, EventCallback cb) {
@@ -98,12 +116,20 @@ void EventLoop::addFd(int fd, uint32_t events, EventCallback cb) {
   ev.data.fd = fd;
   ev.events = events;
   if (epoll_ctl(this->epfd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
-    LOG_ERROR("add fd failed, fd=" << fd << ", errno=" << errno
-                                   << ", err=" << strerror(errno));
+    {
+      std::ostringstream oss;
+      oss << "add fd failed, fd=" << fd << ", errno=" << errno
+                                   << ", err=" << strerror(errno);
+      LOG_ERROR(LogModule::NETWORK, oss.str());
+    }
     return;
   }
   this->callbacks_[fd] = cb;
-  LOG_DEBUG("fd added to epoll, fd=" << fd << ", events=" << events);
+  {
+    std::ostringstream oss;
+    oss << "fd added to epoll, fd=" << fd << ", events=" << events;
+    LOG_DEBUG(LogModule::NETWORK, oss.str());
+  }
 }
 
 void EventLoop::updateFd(int fd, uint32_t events) {
@@ -111,42 +137,61 @@ void EventLoop::updateFd(int fd, uint32_t events) {
   ev.data.fd = fd;
   ev.events = events;
   if (epoll_ctl(this->epfd_, EPOLL_CTL_MOD, fd, &ev) < 0) {
-    LOG_ERROR("update fd failed, fd=" << fd << ", errno=" << errno
-                                      << ", err=" << strerror(errno));
+    {
+      std::ostringstream oss;
+      oss << "update fd failed, fd=" << fd << ", errno=" << errno
+                                      << ", err=" << strerror(errno);
+      LOG_ERROR(LogModule::NETWORK, oss.str());
+    }
     return;
   }
-  LOG_DEBUG("fd updated, fd=" << fd << ", events=" << events);
+  {
+    std::ostringstream oss;
+    oss << "fd updated, fd=" << fd << ", events=" << events;
+    LOG_DEBUG(LogModule::NETWORK, oss.str());
+  }
 }
 
 void EventLoop::removeFd(int fd) {
   if (epoll_ctl(this->epfd_, EPOLL_CTL_DEL, fd, nullptr) < 0) {
-    LOG_WARN("remove fd failed, fd=" << fd << ", errno=" << errno
-                                     << ", err=" << strerror(errno));
+    {
+      std::ostringstream oss;
+      oss << "remove fd failed, fd=" << fd << ", errno=" << errno
+                                     << ", err=" << strerror(errno);
+      LOG_WARN(LogModule::NETWORK, oss.str());
+    }
   } else {
-    LOG_INFO("fd removed from epoll, fd=" << fd);
+    {
+      std::ostringstream oss;
+      oss << "fd removed from epoll, fd=" << fd;
+      LOG_INFO(LogModule::NETWORK, oss.str());
+    }
   }
   this->callbacks_.erase(fd);
 }
 
 void EventLoop::queueInLoop(Functor task) {
-  bool need_wakeup = false;
-  size_t pending_size = 0;
+  tryQueueInLoop(std::move(task));
+}
+
+bool EventLoop::tryQueueInLoop(Functor task) {
   {
-    std::lock_guard<std::mutex> lock(this->mutex_);
-    need_wakeup = this->pending_tasks_.empty();
-    this->pending_tasks_.push(std::move(task));
-    pending_size = this->pending_tasks_.size();
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (quit_.load()) return false;
+    pending_tasks_.push(std::move(task));
   }
-  LOG_DEBUG("task queued into loop, pending_size="
-            << pending_size << ", need_wakeup=" << need_wakeup);
-  if (need_wakeup) {
-    uint64_t one = 1;
-    ssize_t n = write(this->wakeup_fd_, &one, sizeof(one));
-    if (n <= 0 && errno != EAGAIN) {
-      LOG_ERROR("wakeup write failed, errno=" << errno
-                                              << ", err=" << strerror(errno));
-    }
-  }
+  // Queue insertion is the acceptance boundary. Do not log/allocate afterwards.
+  wakeup();
+  return true;
+}
+
+void EventLoop::wakeup() noexcept {
+  uint64_t one = 1;
+  ssize_t n;
+  do {
+    n = ::write(wakeup_fd_, &one, sizeof(one));
+  } while (n < 0 && errno == EINTR);
+  // EAGAIN means an earlier wakeup is already pending.
 }
 
 EventLoop::TimerId EventLoop::runAfter(uint64_t delay_ms, TimerCallback cb) {
@@ -202,7 +247,11 @@ void EventLoop::doPending() {
     this->pending_tasks_.swap(tasks);
   }
 
-  LOG_DEBUG("run pending tasks, count=" << tasks.size());
+  {
+    std::ostringstream oss;
+    oss << "run pending tasks, count=" << tasks.size();
+    LOG_DEBUG(LogModule::NETWORK, oss.str());
+  }
 
   while (!tasks.empty()) {
     tasks.front()();
@@ -225,7 +274,7 @@ void EventLoop::handleWakeUp() {
     }
     break;
   }
-  LOG_DEBUG("wakeup fd drained");
+  LOG_DEBUG(LogModule::NETWORK, "wakeup fd drained");
 }
 
 void EventLoop::handleExpiredTimers() {

@@ -4,19 +4,23 @@
 #include <cstring>
 #include <errno.h>
 #include <iostream>
+#include <sstream>
 #include <sys/socket.h>
 #include <unistd.h>
+
+using namespace ForgeSched;
 
 Connection::Connection(EventLoop *loop, int fd)
     : owner_loop_(loop), fd_(fd), state_(ConnState::Connected) {
   this->refreshActivity();
-  LOG_DEBUG("connection created, fd=" << this->fd_);
+  std::ostringstream oss;
+  oss << "connection created, fd=" << this->fd_;
+  LOG_DEBUG(LogModule::NETWORK, oss.str());
 }
 
 EventLoop *Connection::ownerLoop() const { return this->owner_loop_; }
 
 Connection::~Connection() {
-  LOG_DEBUG("connection destroying, fd=" << this->fd_);
   if (this->fd_ != -1) {
     close(this->fd_);
     this->fd_ = -1;
@@ -35,13 +39,17 @@ Connection::ReadResult Connection::handleRead() {
 
     if (n > 0) {
       this->refreshActivity();
-      LOG_DEBUG("recv success, fd=" << this->fd_ << ", bytes=" << n);
+      std::ostringstream oss;
+      oss << "recv success, fd=" << this->fd_ << ", bytes=" << n;
+      LOG_DEBUG(LogModule::NETWORK, oss.str());
       this->inputBuffer_.append(buffer, static_cast<size_t>(n));
 
       read_res.bytes_received += n;
 
     } else if (n == 0) {
-      LOG_INFO("peer closed connection, fd=" << this->fd_);
+      std::ostringstream oss;
+      oss << "peer closed connection, fd=" << this->fd_;
+      LOG_INFO(LogModule::NETWORK, oss.str());
       this->shutdown();
       read_res.peer_close = true;
       break;
@@ -52,8 +60,9 @@ Connection::ReadResult Connection::handleRead() {
       if (errno == EINTR) {
         continue;
       }
-      LOG_ERROR("recv failed, fd=" << this->fd_ << ", errno=" << errno
-                                   << ", err=" << strerror(errno));
+      std::ostringstream oss;
+      oss << "recv failed, fd=" << this->fd_ << ", errno=" << errno << ", err=" << strerror(errno);
+      LOG_ERROR(LogModule::NETWORK, oss.str());
       this->setState(ConnState::Disconnected);
       read_res.ok = false;
       return read_res;
@@ -64,8 +73,9 @@ Connection::ReadResult Connection::handleRead() {
     auto result = MessageCodec::Decoder::tryDecode(this->inputBuffer_, msg);
 
     if (result == MessageCodec::DecodeResult::Ok) {
-      LOG_DEBUG("message decoded, fd=" << this->fd_
-                                       << ", msg_size=" << msg.size());
+      std::ostringstream oss;
+      oss << "message decoded, fd=" << this->fd_ << ", msg_size=" << msg.size();
+      LOG_DEBUG(LogModule::NETWORK, oss.str());
       read_res.messages_decoded++;
       if (msg == "__ping__") {
         read_res.heartbeat_messages++;
@@ -76,17 +86,23 @@ Connection::ReadResult Connection::handleRead() {
         this->on_message_(this->shared_from_this(), msg);
 
       } else {
-        LOG_WARN("message callback not set, fd=" << this->fd_);
+        std::ostringstream oss;
+        oss << "message callback not set, fd=" << this->fd_;
+        LOG_WARN(LogModule::NETWORK, oss.str());
       }
       continue;
     }
 
     if (result == MessageCodec::DecodeResult::NeedMoreData) {
-      LOG_DEBUG("decode need more data, fd=" << this->fd_);
+      std::ostringstream oss;
+      oss << "decode need more data, fd=" << this->fd_;
+      LOG_DEBUG(LogModule::NETWORK, oss.str());
       break;
     }
 
-    LOG_WARN("invalid packet, fd=" << this->fd_);
+    std::ostringstream oss;
+    oss << "invalid packet, fd=" << this->fd_;
+    LOG_WARN(LogModule::NETWORK, oss.str());
     this->setState(ConnState::Disconnected);
     read_res.ok = false;
     read_res.decode_error = true;
@@ -102,10 +118,12 @@ Connection::WriteResult Connection::handleWrite() {
   while (this->outputBuffer_.readableBytes() > 0) {
 
     ssize_t n = ::send(this->fd_, this->outputBuffer_.peek(),
-                       this->outputBuffer_.readableBytes(), 0);
+                       this->outputBuffer_.readableBytes(), MSG_NOSIGNAL);
     if (n > 0) {
       this->refreshActivity();
-      LOG_DEBUG("send success, fd=" << this->fd_ << ", bytes=" << n);
+      std::ostringstream oss;
+      oss << "send success, fd=" << this->fd_ << ", bytes=" << n;
+      LOG_DEBUG(LogModule::NETWORK, oss.str());
       this->outputBuffer_.retrieve(static_cast<size_t>(n));
       write_res.bytes_sent += n;
 
@@ -114,17 +132,22 @@ Connection::WriteResult Connection::handleWrite() {
         continue;
       }
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        LOG_DEBUG("send would block, fd=" << this->fd_);
+        std::ostringstream oss;
+        oss << "send would block, fd=" << this->fd_;
+        LOG_DEBUG(LogModule::NETWORK, oss.str());
         return write_res;
       }
-      LOG_ERROR("send failed, fd=" << this->fd_ << ", errno=" << errno
-                                   << ", err=" << strerror(errno));
+      std::ostringstream oss;
+      oss << "send failed, fd=" << this->fd_ << ", errno=" << errno << ", err=" << strerror(errno);
+      LOG_ERROR(LogModule::NETWORK, oss.str());
       this->setState(ConnState::Disconnected);
       write_res.ok = false;
       write_res.close = true;
       return write_res;
     } else {
-      LOG_WARN("send returned 0, fd=" << this->fd_);
+      std::ostringstream oss;
+      oss << "send returned 0, fd=" << this->fd_;
+      LOG_WARN(LogModule::NETWORK, oss.str());
       this->setState(ConnState::Disconnected);
       write_res.ok = false;
       write_res.close = true;
@@ -133,14 +156,17 @@ Connection::WriteResult Connection::handleWrite() {
   }
 
   if (this->canBeClosed()) {
-    LOG_INFO("write buffer drained, closing disconnecting connection, fd="
-             << this->fd_);
+    std::ostringstream oss;
+    oss << "write buffer drained, closing disconnecting connection, fd=" << this->fd_;
+    LOG_INFO(LogModule::NETWORK, oss.str());
     this->setState(ConnState::Disconnected);
     write_res.close = true;
     return write_res;
   }
 
-  LOG_DEBUG("write buffer drained, fd=" << this->fd_);
+  std::ostringstream oss;
+  oss << "write buffer drained, fd=" << this->fd_;
+  LOG_DEBUG(LogModule::NETWORK, oss.str());
   return write_res;
 }
 
@@ -148,19 +174,42 @@ void Connection::setMessageCallback(MessageCallback cb) {
   this->on_message_ = std::move(cb);
 }
 
-void Connection::sendPacket(const std::vector<char> &packet) {
-  this->outputBuffer_.append(packet.data(), packet.size());
-  LOG_DEBUG("packet queued to output buffer, fd="
-            << this->fd_ << ", packet_size=" << packet.size()
-            << ", pending_write=" << this->outputBuffer_.readableBytes());
+void Connection::setWriteReadyCallback(
+    std::function<void(const std::shared_ptr<Connection>&)> cb) {
+  on_write_ready_ = std::move(cb);
+}
 
-  this->ownerLoop()->queueInLoop([this]() {});
+bool Connection::sendPacket(const std::vector<char> &packet) {
+  if (isDisconnected() || owner_loop_ == nullptr || packet.empty()) {
+    return false;
+  }
+  auto weak = weak_from_this();
+  if (weak.expired()) return false;
+  ++pending_packets_;
+  try {
+    if (owner_loop_->tryQueueInLoop([weak, packet]() {
+          auto conn = weak.lock();
+          if (!conn) return;
+          --conn->pending_packets_;
+          if (conn->isDisconnected()) return;
+          try {
+            conn->outputBuffer_.append(packet.data(), packet.size());
+          } catch (...) {
+            conn->setState(ConnState::Disconnected);
+          }
+          if (conn->on_write_ready_) conn->on_write_ready_(conn);
+        })) {
+      return true;
+    }
+  } catch (...) {
+    // Allocation failed before queue acceptance; the caller may roll back.
+  }
+  --pending_packets_;
+  return false;
 }
 
 void Connection::send(const std::string &data) {
-  this->outputBuffer_.append(data);
-  LOG_DEBUG("raw data queued to output buffer, fd="
-            << this->fd_ << ", data_size=" << data.size());
+  sendPacket(std::vector<char>(data.begin(), data.end()));
 }
 
 bool Connection::wantWrite() const {
@@ -171,16 +220,19 @@ Connection::ConnState Connection::state() const { return this->state_.load(); }
 
 void Connection::setState(Connection::ConnState st) {
   if (this->state_.load() != st) {
-    LOG_INFO("connection state change, fd="
-             << this->fd_ << ", from=" << static_cast<int>(this->state_.load())
-             << ", to=" << static_cast<int>(st));
+    std::ostringstream oss;
+    oss << "connection state change, fd=" << this->fd_ << ", from=" << static_cast<int>(this->state_.load())
+         << ", to=" << static_cast<int>(st);
+    LOG_INFO(LogModule::NETWORK, oss.str());
   }
   this->state_.store(st);
 }
 
 void Connection::shutdown() {
   if (this->state_ == ConnState::Connected) {
-    LOG_INFO("connection enter disconnecting, fd=" << this->fd_);
+    std::ostringstream oss;
+    oss << "connection enter disconnecting, fd=" << this->fd_;
+    LOG_INFO(LogModule::NETWORK, oss.str());
     this->state_.store(ConnState::Disconnecting);
   }
 }
@@ -212,7 +264,8 @@ bool Connection::hasPendingTasks() const {
 
 bool Connection::canBeClosed() const {
   return this->state_ == ConnState::Disconnecting &&
-         this->outputBuffer_.readableBytes() == 0 && !this->hasPendingTasks();
+         this->outputBuffer_.readableBytes() == 0 && !this->hasPendingTasks() &&
+         pending_packets_.load() == 0;
 }
 
 void Connection::refreshActivity() {

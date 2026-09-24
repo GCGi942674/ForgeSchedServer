@@ -23,7 +23,7 @@ public:
     uint64_t expire_ms;
     uint64_t interval_ms;
     TimerCallback cb;
-    bool canceled;
+    std::atomic<bool> canceled{false};
   };
 
   struct TimerCompare {
@@ -45,12 +45,17 @@ public:
   void removeFd(int fd);
 
   void queueInLoop(Functor task);
+  // true commits local queue acceptance; no throwing work follows enqueue.
+  bool tryQueueInLoop(Functor task);
+  bool isInLoopThread() const { return current_loop_ == this; }
 
   TimerId runAfter(uint64_t delay_ms, TimerCallback cb);
   TimerId runEvery(uint64_t interval_ms, TimerCallback cb);
   void cancelTimer(TimerId timer_id);
 
 private:
+  void wakeup() noexcept;
+  inline static thread_local EventLoop* current_loop_{nullptr};
   void doPending();
   void handleWakeUp();
 

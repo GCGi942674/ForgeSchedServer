@@ -35,7 +35,6 @@ void ThreadPool::stop() {
       t.join();
     }
   }
-  LOG_INFO("thread pool stopping...");
 }
 
 void ThreadPool::shutdown() {
@@ -50,7 +49,6 @@ void ThreadPool::worker() {
       std::unique_lock<std::mutex> lock(mutex_);
       cond_var_.wait(lock, [this] { return stop_ || !tasks_.empty(); });
       if (stop_ && tasks_.empty()) {
-        LOG_INFO("worker thread exiting");
         return;
       }
       task = tasks_.front();

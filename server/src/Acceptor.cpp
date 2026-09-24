@@ -5,15 +5,17 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <sys/eventfd.h>
 #include <unistd.h>
+
+using namespace ForgeSched;
 
 Acceptor::Acceptor(EventLoop *loop, int port)
     : loop_(loop), port_(port), listen_fd_(-1) {}
 
 Acceptor::~Acceptor() {
   if (listen_fd_ != -1) {
-    LOG_INFO("close listen_fd=" << this->listen_fd_);
     close(this->listen_fd_);
     this->listen_fd_ = -1;
   }
@@ -23,8 +25,9 @@ bool Acceptor::startListen() {
   this->listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
 
   if (this->listen_fd_ < 0) {
-    LOG_ERROR("socket failed, error = " << errno
-                                        << ", err = " << strerror(errno));
+    std::ostringstream oss;
+    oss << "socket failed, error = " << errno << ", err = " << strerror(errno);
+    LOG_ERROR(LogModule::NETWORK, oss.str());
     return false;
   }
 
@@ -39,24 +42,30 @@ bool Acceptor::startListen() {
   addr.sin_addr.s_addr = INADDR_ANY;
 
   if (bind(this->listen_fd_, (sockaddr *)&addr, sizeof(addr)) < 0) {
-    LOG_ERROR("bind failed, fd=" << this->listen_fd_ << ", port=" << this->port_
-                                 << ", errno=" << errno
-                                 << ", err=" << strerror(errno));
+    std::ostringstream oss;
+    oss << "bind failed, fd=" << this->listen_fd_ << ", port=" << this->port_
+        << ", errno=" << errno << ", err=" << strerror(errno);
+    LOG_ERROR(LogModule::NETWORK, oss.str());
     close(this->listen_fd_);
     this->listen_fd_ = -1;
     return false;
   }
 
   if (listen(this->listen_fd_, 128) < 0) {
-    LOG_ERROR("listen failed, fd=" << this->listen_fd_ << ", errno=" << errno
-                                   << ", err=" << strerror(errno));
+    std::ostringstream oss;
+    oss << "listen failed, fd=" << this->listen_fd_ << ", errno=" << errno
+        << ", err=" << strerror(errno);
+    LOG_ERROR(LogModule::NETWORK, oss.str());
     close(this->listen_fd_);
     this->listen_fd_ = -1;
     return false;
   }
 
-  LOG_INFO("listen started, fd=" << this->listen_fd_
-                                 << ", port=" << this->port_);
+  {
+    std::ostringstream oss;
+    oss << "listen started, fd=" << this->listen_fd_ << ", port=" << this->port_;
+    LOG_INFO(LogModule::NETWORK, oss.str());
+  }
 
   this->loop_->addFd(this->listen_fd_, EPOLLIN,
                      [this](uint32_t event) { this->handleAccept(); });
@@ -68,11 +77,15 @@ void Acceptor::handleAccept() {
     int client_fd = accept(this->listen_fd_, nullptr, nullptr);
     if (client_fd >= 0) {
       setNonBlocking(client_fd);
-      LOG_DEBUG("accept new connection, client_fd=" << client_fd);
+      std::ostringstream oss;
+      oss << "accept new connection, client_fd=" << client_fd;
+      LOG_DEBUG(LogModule::NETWORK, oss.str());
       if (this->callback_) {
         this->callback_(client_fd);
       } else {
-        LOG_WARN("new connection callback not set, client_fd=" << client_fd);
+        std::ostringstream oss;
+        oss << "new connection callback not set, client_fd=" << client_fd;
+        LOG_WARN(LogModule::NETWORK, oss.str());
         close(client_fd);
       }
     } else {
@@ -82,8 +95,9 @@ void Acceptor::handleAccept() {
       if (errno == EINTR) {
         continue;
       }
-      LOG_ERROR("accept failed, errno=" << errno
-                                        << ", err=" << strerror(errno));
+      std::ostringstream oss;
+      oss << "accept failed, errno=" << errno << ", err=" << strerror(errno);
+      LOG_ERROR(LogModule::NETWORK, oss.str());
       break;
     }
   }
@@ -94,7 +108,7 @@ void Acceptor::stopListen() {
     this->loop_->removeFd(this->listen_fd_);
     close(this->listen_fd_);
     this->listen_fd_ = -1;
-    LOG_INFO("Acceptor stop listening");
+    LOG_INFO(LogModule::NETWORK, "Acceptor stop listening");
   }
 }
 

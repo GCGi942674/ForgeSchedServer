@@ -47,7 +47,9 @@ public:
   //是否需要监听写事件
   bool wantWrite() const;
   void send(const std::string &data);
-  void sendPacket(const std::vector<char> &packet);
+  // true means accepted into the owner loop, not delivered to the peer.
+  bool sendPacket(const std::vector<char> &packet);
+  void setWriteReadyCallback(std::function<void(const std::shared_ptr<Connection>&)> cb);
 
   ConnState state() const;
   void setState(ConnState st);
@@ -69,6 +71,8 @@ private:
   int fd_;
   std::atomic<ConnState> state_;
   MessageCallback on_message_;
+  std::function<void(const std::shared_ptr<Connection>&)> on_write_ready_;
+  std::atomic<int> pending_packets_{0};
 
   Buffer inputBuffer_;
   Buffer outputBuffer_;
