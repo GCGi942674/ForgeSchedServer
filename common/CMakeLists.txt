@@ -12,7 +12,7 @@ add_library(common STATIC
     src/Response.cpp
     src/TaskDTO.cpp
     src/WorkerDTO.cpp
-    src/protocol/message_codec.cpp
+    src/protocol/Message_codec.cpp
     src/Buffer.cpp
     src/MetricCounter.cpp
 )

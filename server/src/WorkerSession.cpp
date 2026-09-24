@@ -2,7 +2,7 @@
 #include "protocol/dto/WorkerDTO.h"
 #include "protocol/dto/Response.h"
 #include "protocol/ProtocolVersion.h"
-#include "protocol/message_codec.h"
+#include "protocol/Message_codec.h"
 #include "Logging.h"
 
 using namespace ForgeSched::Protocol;

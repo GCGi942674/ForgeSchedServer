@@ -8,7 +8,7 @@
 #include "EventLoopThreadPool.h"
 #include "ServerMetrics.h"
 #include "Thread_pool.h"
-#include "protocol/message_codec.h"
+#include "protocol/Message_codec.h"
 #include <functional>
 #include <memory>
 #include <mutex>

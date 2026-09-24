@@ -1,5 +1,5 @@
-#include "worker/worker.h"
-#include "worker/workerStatus.h"
+#include "worker/Worker.h"
+#include "worker/WorkerStatus.h"
 
 namespace ForgeSched {
 

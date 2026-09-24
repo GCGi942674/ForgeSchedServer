@@ -1,7 +1,7 @@
 #ifndef FORGESCHED_WORKER_H
 #define FORGESCHED_WORKER_H
 
-#include "workerStatus.h"
+#include "WorkerStatus.h"
 #include <string>
 #include <cstdint>
 #include <chrono>

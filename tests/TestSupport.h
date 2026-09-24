@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include "protocol/message_codec.h"
+#include "protocol/Message_codec.h"
 #include "nlohmann/json.hpp"
 
 // Unlike assert, checks and their side effects also run in Release builds.

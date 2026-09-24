@@ -7,7 +7,7 @@
 #include "protocol/ProtocolVersion.h"
 #include "protocol/ProtocolCodec.h"
 #include "protocol/dto/TaskDTO.h"
-#include "protocol/message_codec.h"
+#include "protocol/Message_codec.h"
 #include "Logging.h"
 
 namespace ForgeSched {

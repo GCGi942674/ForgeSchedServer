@@ -1,8 +1,8 @@
 #ifndef FORGESCHED_WORKER_MANAGER_H
 #define FORGESCHED_WORKER_MANAGER_H
 
-#include "worker/worker.h"
-#include "worker/workerStatus.h"
+#include "worker/Worker.h"
+#include "worker/WorkerStatus.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>

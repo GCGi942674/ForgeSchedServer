@@ -4,7 +4,7 @@
 #include "task/Task.h"
 #include "task/TaskStatus.h"
 #include "worker/WorkerManager.h"
-#include "worker/worker.h"
+#include "worker/Worker.h"
 #include <unordered_map>
 #include <vector>
 #include <optional>
