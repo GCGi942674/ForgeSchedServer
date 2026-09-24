@@ -18,9 +18,11 @@ struct CreateTaskRequest {
     int priority{0};
 };
 
+class SchedulingDriver;
+
 class TaskService {
 public:
-    explicit TaskService(Scheduler& scheduler);
+    explicit TaskService(Scheduler& scheduler, SchedulingDriver& scheduling_driver);
 
     std::optional<TaskId> createTask(const CreateTaskRequest& request);
     std::optional<Task> getTask(TaskId id) const;
@@ -33,6 +35,7 @@ private:
     bool isPriorityValid(int priority) const;
 
     Scheduler& scheduler_;
+    SchedulingDriver& scheduling_driver_;
     TaskIdGenerator id_generator_;
 };
 

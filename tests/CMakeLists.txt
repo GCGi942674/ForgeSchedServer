@@ -14,7 +14,7 @@ foreach(name test_logging test_thread_pool test_EchoClient test_EchoServer)
 endforeach()
 
 # External regressions for the currently synchronized development stage.
-foreach(name test_scheduler test_protocol test_worker_network test_server_process)
+foreach(name test_scheduler test_protocol test_worker_network test_server_process test_scheduling_driver test_automatic_scheduling)
   add_executable(${name} ${name}.cpp)
   target_link_libraries(${name} PRIVATE forgesched_server_core)
   add_test(NAME ${name} COMMAND ${name} $<TARGET_FILE:server>)

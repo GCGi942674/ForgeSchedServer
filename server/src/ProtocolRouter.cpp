@@ -4,6 +4,7 @@
 #include "task/TaskService.h"
 #include "task/TaskStatus.h"
 #include "task/TaskType.h"
+#include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
 #include <chrono>
 
@@ -12,11 +13,13 @@ namespace ForgeSched::Protocol {
 ProtocolRouter::ProtocolRouter(
     TaskService& task_service,
     Scheduler& scheduler,
-    WorkerManager& worker_manager
+    WorkerManager& worker_manager,
+    SchedulingDriver& scheduling_driver
 )
     : task_service_(task_service)
     , scheduler_(scheduler)
     , worker_manager_(worker_manager)
+    , scheduling_driver_(scheduling_driver)
 {
 }
 
@@ -183,6 +186,8 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!success) {
                 return buildResponse(request, ResponseCode::INTERNAL_ERROR, "failed to complete task");
             }
+
+            scheduling_driver_.requestSchedule();
 
             return buildResponse(request, ResponseCode::OK, "ok");
         }

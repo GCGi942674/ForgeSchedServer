@@ -14,6 +14,7 @@ add_library(forgesched_server_core STATIC
     src/ProtocolRouter.cpp
     src/Scheduler.cpp
     src/SchedulingCoordinator.cpp
+    src/SchedulingDriver.cpp
     src/TaskIdGenerator.cpp
     src/TaskService.cpp
     src/WorkerConnectionRegistry.cpp

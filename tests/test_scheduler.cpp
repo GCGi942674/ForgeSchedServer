@@ -1,5 +1,6 @@
 #include "TestSupport.h"
 #include "scheduler/SchedulingCoordinator.h"
+#include "scheduler/SchedulingDriver.h"
 #include "task/TaskService.h"
 #include <limits>
 #include <algorithm>
@@ -26,19 +27,27 @@ int main() { return testMain([] {
         if (from > 3) CHECK(t.transitionTo(states[from]));
         CHECK(t.transitionTo(states[to]) == legal[from][to]);
     }
-    WorkerManager workers; Scheduler scheduler(workers); TaskService service(scheduler);
+    WorkerManager workers; Scheduler scheduler(workers); Dispatcher dispatcher;
+    SchedulingCoordinator coordinator(scheduler, dispatcher);
+    SchedulingDriver driver(coordinator);
+    TaskService service(scheduler, driver);
     CHECK(!workers.registerWorker("", "host", 1));
     CHECK(!workers.registerWorker("w", "host", 0));
     CHECK(workers.registerWorker("w", "host", 1));
     CHECK(!service.createTask({TaskType::UNKNOWN, "x", "r", 0}));
     CHECK(!service.createTask({TaskType::REGRESSION, "", "r", 0}));
     CHECK(!service.createTask({TaskType::REGRESSION, "x", "r", 101}));
-    auto low = service.createTask({TaskType::REGRESSION, "x", "r", -1}); CHECK(low);
-    auto high = service.createTask({TaskType::REGRESSION, "x", "r", 10}); CHECK(high);
-    auto equal = service.createTask({TaskType::REGRESSION, "x", "r", 10}); CHECK(equal);
+    auto createQueued = [&](CreateTaskRequest request) -> std::optional<TaskId> {
+        static TaskId id = 10000; Task task(++id, request.type, request.target, request.revision);
+        task.setPriority(request.priority);
+        if (!scheduler.submitTask(task)) return std::nullopt;
+        return task.getId();
+    };
+    auto low = createQueued({TaskType::REGRESSION, "x", "r", -1}); CHECK(low);
+    auto high = createQueued({TaskType::REGRESSION, "x", "r", 10}); CHECK(high);
+    auto equal = createQueued({TaskType::REGRESSION, "x", "r", 10}); CHECK(equal);
     CHECK(*low != *high && *high != *equal);
     CHECK(workers.getWorker("w")->getUsedSlots() == 0);
-    Dispatcher dispatcher; SchedulingCoordinator coordinator(scheduler, dispatcher);
     for (int mode : {0, 2}) {
         dispatcher.mode = mode; auto result = coordinator.runOnce();
         CHECK(result.dispatch_failed_count == 1 && result.rollback_failed_count == 0);
@@ -60,29 +69,29 @@ int main() { return testMain([] {
     CHECK(!scheduler.rollbackAssignment(id));
     CHECK(scheduler.completeTask(id, TaskStatus::SUCCEEDED));
     CHECK(!scheduler.completeTask(id, TaskStatus::SUCCEEDED));
-    CHECK(!service.cancelTask(id)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
+    CHECK(!scheduler.cancelTask(id)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
     CHECK(!workers.releaseSlot("w"));
-    for (auto t : scheduler.getTasksByStatus(TaskStatus::QUEUED)) CHECK(service.cancelTask(t.getId()));
+    for (auto t : scheduler.getTasksByStatus(TaskStatus::QUEUED)) CHECK(scheduler.cancelTask(t.getId()));
     CHECK(scheduler.schedule().empty());
     // Priority/FIFO independently of rollback (which requeues at the end).
-    for (int priority : {0, 20, 20}) CHECK(service.createTask({TaskType::REGRESSION, "x", "r", priority}));
+    for (int priority : {0, 20, 20}) CHECK(createQueued({TaskType::REGRESSION, "x", "r", priority}));
     auto queued = scheduler.getTasksByStatus(TaskStatus::QUEUED);
     std::vector<TaskId> top;
     for (const auto& t : queued) if (t.getPriority() == 20) top.push_back(t.getId());
     std::sort(top.begin(), top.end());
     for (auto expected : top) {
         auto a = scheduler.schedule(); CHECK(a.size() == 1 && a[0].task_id == expected);
-        CHECK(service.cancelTask(expected)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
+        CHECK(scheduler.cancelTask(expected)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
     }
     auto a = scheduler.schedule(); CHECK(a.size() == 1);
     CHECK(scheduler.markTaskStarted(a[0].task_id, "w"));
-    CHECK(service.cancelTask(a[0].task_id)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
+    CHECK(scheduler.cancelTask(a[0].task_id)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
     CHECK(workers.registerWorker("big", "host", std::numeric_limits<uint32_t>::max()));
-    CHECK(service.createTask({TaskType::REGRESSION, "x", "r", 0}));
+    CHECK(createQueued({TaskType::REGRESSION, "x", "r", 0}));
     a = scheduler.schedule(); CHECK(a.size() == 1 && a[0].worker_id == "big");
-    CHECK(service.cancelTask(a[0].task_id));
+    CHECK(scheduler.cancelTask(a[0].task_id));
     for (auto final : {TaskStatus::FAILED, TaskStatus::TIMEOUT}) {
-        auto next = service.createTask({TaskType::REGRESSION, "x", "r", 0}); CHECK(next);
+        auto next = createQueued({TaskType::REGRESSION, "x", "r", 0}); CHECK(next);
         auto batch = scheduler.schedule(); CHECK(batch.size() == 1);
         CHECK(scheduler.markTaskStarted(*next, batch[0].worker_id));
         CHECK(scheduler.completeTask(*next, final));

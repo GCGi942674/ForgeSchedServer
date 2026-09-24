@@ -12,6 +12,12 @@
 #include "protocol/dto/WorkerDTO.h"
 #include "protocol/dto/Response.h"
 
+namespace ForgeSched {
+
+class SchedulingDriver;
+
+} // namespace ForgeSched
+
 namespace ForgeSched::Protocol {
 
 enum class ResponseCode {
@@ -27,7 +33,8 @@ public:
     ProtocolRouter(
         TaskService& task_service,
         Scheduler& scheduler,
-        WorkerManager& worker_manager
+        WorkerManager& worker_manager,
+        SchedulingDriver& scheduling_driver
     );
 
     ProtocolMessage handle(const ProtocolMessage& request);
@@ -48,6 +55,7 @@ private:
     TaskService& task_service_;
     Scheduler& scheduler_;
     WorkerManager& worker_manager_;
+    SchedulingDriver& scheduling_driver_;
 };
 
 } // namespace ForgeSched::Protocol

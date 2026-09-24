@@ -20,13 +20,16 @@
 
 namespace ForgeSched {
 
+class SchedulingDriver;
+
 class WorkerSession {
 public:
     explicit WorkerSession(
         EventLoop* loop,
         WorkerManager& worker_manager,
         WorkerConnectionRegistry& registry,
-        Protocol::ProtocolRouter& router
+        Protocol::ProtocolRouter& router,
+        SchedulingDriver& scheduling_driver
     );
 
     ~WorkerSession();
@@ -57,6 +60,7 @@ private:
     WorkerManager& worker_manager_;
     WorkerConnectionRegistry& registry_;
     Protocol::ProtocolRouter& router_;
+    SchedulingDriver& scheduling_driver_;
 
     static constexpr uint32_t kProtocolVersion = 1;
 };

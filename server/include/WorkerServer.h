@@ -36,8 +36,9 @@ private:
     std::unique_ptr<WorkerConnectionRegistry> registry_ptr_;
     std::unique_ptr<NetworkWorkerDispatcher> dispatcher_ptr_;
     std::unique_ptr<Scheduler> scheduler_ptr_;
-    std::unique_ptr<TaskService> task_service_ptr_;
     std::unique_ptr<SchedulingCoordinator> coordinator_ptr_;
+    std::unique_ptr<SchedulingDriver> scheduling_driver_ptr_;
+    std::unique_ptr<TaskService> task_service_ptr_;
     std::unique_ptr<Protocol::ProtocolRouter> router_ptr_;
     std::mutex session_mutex_;
     std::unordered_map<Connection*, std::unique_ptr<WorkerSession>> sessions_;

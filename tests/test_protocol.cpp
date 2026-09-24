@@ -3,10 +3,21 @@
 #include "protocol/ProtocolRouter.h"
 #include "protocol/dto/WorkerDTO.h"
 #include "config/Config.h"
+#include "scheduler/SchedulingCoordinator.h"
+#include "scheduler/SchedulingDriver.h"
+#include "task/Task.h"
+#include "task/TaskStatus.h"
+#include "worker/WorkerManager.h"
+#include "worker/WorkerDispatcher.h"
 #include <fstream>
 #include <filesystem>
 using namespace ForgeSched;
 using namespace ForgeSched::Protocol;
+
+struct StubDispatcher : WorkerDispatcher {
+    bool dispatch(const WorkerId&, const Task&) override { return false; }
+};
+
 int main() { return testMain([] {
     Buffer buffer; std::string decoded;
     auto packet = MessageCodec::encode("abc");
@@ -39,15 +50,21 @@ int main() { return testMain([] {
         auto j = valid; j.erase(key); CHECK(!ProtocolCodec::decode(j.dump(), message, error));
     }
     for (auto bad : {nlohmann::json(-1), nlohmann::json(4294967297ULL), nlohmann::json("1")}) {
-        auto j = valid; j["version"] = bad; CHECK(!ProtocolCodec::decode(j.dump(), message, error));
+        auto j = valid; j["version"] = bad;
+        if (ProtocolCodec::decode(j.dump(), message, error)) {
+            throw std::runtime_error("invalid protocol version accepted: " + bad.dump());
+        }
     }
     for (const char* bad : {"{", "[]", "null", "1"}) CHECK(!ProtocolCodec::decode(bad, message, error));
     DTO::WorkerRegisterRequest reg;
     for (auto slots : {0ULL, 4294967296ULL}) {
         CHECK(!DTO::fromJson(nlohmann::json{{"worker_id", "w"}, {"hostname", "h"}, {"slots", slots}}, reg, error));
     }
-    WorkerManager workers; Scheduler scheduler(workers); TaskService service(scheduler);
-    ProtocolRouter router(service, scheduler, workers);
+    WorkerManager workers; Scheduler scheduler(workers); StubDispatcher dispatcher;
+    SchedulingCoordinator coordinator(scheduler, dispatcher);
+    SchedulingDriver driver(coordinator);
+    TaskService service(scheduler, driver);
+    ProtocolRouter router(service, scheduler, workers, driver);
     auto route = [&](const std::string& type, nlohmann::json data) {
         ProtocolMessage request;
         CHECK(ProtocolCodec::decode(envelope(type, std::move(data)).dump(), request, error));

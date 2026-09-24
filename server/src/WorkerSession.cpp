@@ -1,4 +1,5 @@
 #include "worker/WorkerSession.h"
+#include "scheduler/SchedulingDriver.h"
 #include "protocol/dto/WorkerDTO.h"
 #include "protocol/dto/Response.h"
 #include "protocol/ProtocolVersion.h"
@@ -11,8 +12,8 @@ using namespace ForgeSched::Protocol::DTO;
 namespace ForgeSched {
 
 WorkerSession::WorkerSession(EventLoop* loop, WorkerManager& worker_manager,
-    WorkerConnectionRegistry& registry, ProtocolRouter& router)
-    : loop_(loop), worker_manager_(worker_manager), registry_(registry), router_(router) {}
+    WorkerConnectionRegistry& registry, ProtocolRouter& router, SchedulingDriver& scheduling_driver)
+    : loop_(loop), worker_manager_(worker_manager), registry_(registry), router_(router), scheduling_driver_(scheduling_driver) {}
 
 WorkerSession::~WorkerSession() = default;
 
@@ -70,6 +71,8 @@ void WorkerSession::handleRequest(const ProtocolMessage& request) {
         binding_handle_ = *handle;
         LOG_INFO(LogModule::WORKER, "worker registered: " + *worker_id_);
         reply(request.request_id, ResponseCode::OK, "ok");
+
+        scheduling_driver_.requestSchedule();
         return;
     }
 

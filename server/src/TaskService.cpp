@@ -2,17 +2,20 @@
 #include "task/Task.h"
 #include "task/TaskType.h"
 #include "task/TaskStatus.h"
+#include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
 
 namespace ForgeSched {
 
-TaskService::TaskService(Scheduler& scheduler)
-    : scheduler_(scheduler)
-{
-}
 
 bool TaskService::isPriorityValid(int priority) const {
     return priority >= -100 && priority <= 100;
+}
+
+TaskService::TaskService(Scheduler& scheduler, SchedulingDriver& scheduling_driver)
+    : scheduler_(scheduler)
+    , scheduling_driver_(scheduling_driver)
+{
 }
 
 std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) {
@@ -48,6 +51,8 @@ std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) 
 
     LOG_INFO(LogModule::TASK, "task=" + std::to_string(id) + " created type=" + toString(request.type) + " target=" + request.target + " revision=" + request.revision);
 
+    scheduling_driver_.requestSchedule();
+
     return id;
 }
 
@@ -56,7 +61,11 @@ std::optional<Task> TaskService::getTask(TaskId id) const {
 }
 
 bool TaskService::cancelTask(TaskId id) {
-    return scheduler_.cancelTask(id);
+    if (scheduler_.cancelTask(id)) {
+        scheduling_driver_.requestSchedule();
+        return true;
+    }
+    return false;
 }
 
 } // namespace ForgeSched

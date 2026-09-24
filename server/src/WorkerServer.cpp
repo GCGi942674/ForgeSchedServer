@@ -2,6 +2,7 @@
 #include "Logging.h"
 #include "logger/Logger.h"
 #include "logger/LogModule.h"
+#include "scheduler/SchedulingDriver.h"
 
 using namespace ForgeSched::Protocol;
 
@@ -13,9 +14,10 @@ WorkerServer::WorkerServer()
     registry_ptr_ = std::make_unique<WorkerConnectionRegistry>();
     dispatcher_ptr_ = std::make_unique<NetworkWorkerDispatcher>(*registry_ptr_);
     scheduler_ptr_ = std::make_unique<Scheduler>(*worker_manager_ptr_);
-    task_service_ptr_ = std::make_unique<TaskService>(*scheduler_ptr_);
     coordinator_ptr_ = std::make_unique<SchedulingCoordinator>(*scheduler_ptr_, *dispatcher_ptr_);
-    router_ptr_ = std::make_unique<Protocol::ProtocolRouter>(*task_service_ptr_, *scheduler_ptr_, *worker_manager_ptr_);
+    scheduling_driver_ptr_ = std::make_unique<SchedulingDriver>(*coordinator_ptr_);
+    task_service_ptr_ = std::make_unique<TaskService>(*scheduler_ptr_, *scheduling_driver_ptr_);
+    router_ptr_ = std::make_unique<Protocol::ProtocolRouter>(*task_service_ptr_, *scheduler_ptr_, *worker_manager_ptr_, *scheduling_driver_ptr_);
 
     LOG_INFO(LogModule::SERVER, "WorkerServer initialized");
 }
@@ -28,7 +30,7 @@ void WorkerServer::attach(EchoServer& transport) {
         [this](const std::shared_ptr<Connection>& conn) {
             std::lock_guard<std::mutex> lock(session_mutex_);
             auto session = std::make_unique<WorkerSession>(conn->ownerLoop(),
-                *worker_manager_ptr_, *registry_ptr_, *router_ptr_);
+                *worker_manager_ptr_, *registry_ptr_, *router_ptr_, *scheduling_driver_ptr_);
             session->setConnection(conn);
             sessions_.emplace(conn.get(), std::move(session));
         },

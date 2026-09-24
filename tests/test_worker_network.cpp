@@ -13,7 +13,14 @@ struct RunningServer {
         thread = std::thread([this] { result = server.run(); });
     }
     void stop() {
-        if (thread.joinable()) { uint64_t one = 1; ::write(signal.value, &one, sizeof(one)); thread.join(); }
+        if (thread.joinable()) {
+            uint64_t one = 1;
+            ssize_t written;
+            do { written = ::write(signal.value, &one, sizeof(one)); }
+            while (written < 0 && errno == EINTR);
+            if (written != sizeof(one)) std::terminate();
+            thread.join();
+        }
     }
     ~RunningServer() { stop(); }
 };
@@ -47,6 +54,8 @@ int main() { return testMain([] {
     auto packet = MessageCodec::encode(reg.dump());
     sendBytes(a.value, packet.data(), 2); sendBytes(a.value, packet.data()+2, packet.size()-2);
     CHECK(receiveJson(a.value)["data"]["code"] == 0);
+    auto assigned = receiveJson(a.value);
+    CHECK(assigned["type"] == "task_assign" && assigned["data"]["task_id"] == *task);
     response(a.value, reg, true);
     auto impostor = reg; impostor["data"]["worker_id"] = "phantom";
     response(a.value, impostor, false); CHECK(!host.worker.getWorkerManager().getWorker("phantom"));
@@ -57,9 +66,6 @@ int main() { return testMain([] {
     response(a.value, heartbeat, false); a.reset();
     response(b.value, heartbeat, true);
     CHECK(host.worker.getWorkerManager().getWorker("w")->getStatus() == WorkerStatus::ONLINE);
-    CHECK(host.worker.runOnce().dispatched_count == 1);
-    auto assigned = receiveJson(b.value);
-    CHECK(assigned["type"] == "task_assign" && assigned["data"]["task_id"] == *task);
     CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 1);
     auto start = envelope("task_start", {{"task_id", *task}, {"worker_id", "w"}});
     auto finish = envelope("task_result", {{"task_id", *task}, {"worker_id", "w"}, {"status", "SUCCEEDED"}});
