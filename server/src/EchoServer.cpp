@@ -341,7 +341,9 @@ void EchoServer::handleClientEvent(const std::shared_ptr<Connection> &conn,
     return;
   }
 
-  if (events & EPOLLIN) {
+  // RDHUP does not mean the receive queue is drained. With bounded reads,
+  // continue across turns until recv returns EOF; only then enter shutdown.
+  if (events & (EPOLLIN | EPOLLRDHUP)) {
     auto rr = conn->handleRead();
     this->metrics_.onBytesReceived(rr.bytes_received);
 
@@ -395,18 +397,6 @@ void EchoServer::handleClientEvent(const std::shared_ptr<Connection> &conn,
     }
 
     if (wr.close) {
-      this->removeConnection(conn, ServerMetrics::CloseReason::PeerClosed);
-      return;
-    }
-  }
-
-  if (events & EPOLLRDHUP) {
-    std::ostringstream oss;
-    oss << "peer rdhup, fd=" << client_fd;
-    LOG_INFO(LogModule::NETWORK, oss.str());
-    conn->shutdown();
-
-    if (conn->canBeClosed()) {
       this->removeConnection(conn, ServerMetrics::CloseReason::PeerClosed);
       return;
     }

@@ -1,6 +1,8 @@
 #include "scheduler/Scheduler.h"
 #include "task/TaskStatus.h"
 #include "Logging.h"
+#include "worker/WorkerDispatcher.h"
+#include <type_traits>
 
 namespace ForgeSched {
 
@@ -33,92 +35,93 @@ bool Scheduler::submitTask(Task task) {
         return false;
     }
 
-    task_queue_.push({task.getId(), task.getPriority(), next_sequence_++});
-    tasks_.emplace(task.getId(), std::move(task));
-
-    LOG_INFO(LogModule::TASK, "task=" + std::to_string(task.getId()) + " submitted priority=" + std::to_string(task.getPriority()));
+    // Reserve before changing task ownership; rollback can then requeue without allocation.
+    task_queue_.reserve(tasks_.size() + 1);
+    const auto id = task.getId();
+    const auto priority = task.getPriority();
+    tasks_.emplace(id, std::move(task));
+    task_queue_.push({id, priority, next_sequence_++});
 
     return true;
 }
 
 std::vector<TaskAssignment> Scheduler::schedule() {
-    std::vector<TaskAssignment> assignments;
-
     std::lock_guard<std::mutex> lock(mutex_);
-
-    std::vector<QueuedTaskInfo> to_process;
-
-    while (!task_queue_.empty()) {
-        const auto& queued_info = task_queue_.top();
-        TaskId task_id = queued_info.task_id;
-
-        auto it = tasks_.find(task_id);
-        if (it == tasks_.end()) {
-            task_queue_.pop();
-            continue;
-        }
-
-        Task& task = it->second;
-
-        if (task.getStatus() != TaskStatus::QUEUED) {
-            task_queue_.pop();
-            continue;
-        }
-
-        to_process.push_back(queued_info);
-        task_queue_.pop();
-    }
-
-    for (const auto& queued_info : to_process) {
-        auto it = tasks_.find(queued_info.task_id);
-        if (it == tasks_.end()) {
-            continue;
-        }
-
-        Task& task = it->second;
-
-        if (task.getStatus() != TaskStatus::QUEUED) {
-            continue;
-        }
-
-        std::vector<Worker> available_workers = worker_manager_.getAvailableWorkers();
-
-        if (available_workers.empty()) {
-            task_queue_.push(queued_info);
-            continue;
-        }
-
-        std::optional<Worker> selected_worker;
-        uint32_t max_free_slots = 0;
-
-        for (const auto& worker : available_workers) {
-            uint32_t free = worker.freeSlots();
-            if (!selected_worker || free > max_free_slots || (free == max_free_slots && worker.getId() < selected_worker->getId())) {
-                max_free_slots = free;
-                selected_worker = worker;
+    // Work on a copy: allocation failure must not consume the real queue.
+    auto pending = task_queue_;
+    pending.reserve(tasks_.size()); // also reserves allocation-free rollback space
+    std::vector<TaskAssignment> assignments;
+    std::vector<std::pair<Task*, Task>> changes;
+    assignments.reserve(pending.size());
+    changes.reserve(pending.size());
+    size_t acquired = 0;
+    static_assert(std::is_nothrow_move_assignable<Task>::value, "task commit must not throw");
+    try {
+        while (!pending.empty()) {
+            const auto queued = pending.top();
+            auto it = tasks_.find(queued.task_id);
+            if (it == tasks_.end() || it->second.getStatus() != TaskStatus::QUEUED) {
+                pending.pop();
+                continue;
             }
+            auto workers = worker_manager_.getAvailableWorkers();
+            if (workers.empty()) break;
+            const Worker* selected = &workers.front();
+            for (const auto& worker : workers) {
+                if (worker.freeSlots() > selected->freeSlots() ||
+                    (worker.freeSlots() == selected->freeSlots() && worker.getId() < selected->getId()))
+                    selected = &worker;
+            }
+            const auto worker_id = selected->getId();
+            Task prepared = it->second;
+            prepared.setWorkerId(worker_id);
+            prepared.transitionTo(TaskStatus::ASSIGNED);
+            changes.emplace_back(&it->second, std::move(prepared));
+            assignments.push_back({queued.task_id, worker_id});
+            if (!worker_manager_.acquireSlot(worker_id)) {
+                assignments.pop_back();
+                changes.pop_back();
+                break;
+            }
+            ++acquired;
+            pending.pop();
         }
-
-        if (!worker_manager_.acquireSlot(selected_worker->getId())) {
-            task_queue_.push(queued_info);
-            continue;
-        }
-
-        task.setWorkerId(selected_worker->getId());
-
-        if (!task.transitionTo(TaskStatus::ASSIGNED)) {
-            LOG_ERROR(LogModule::SCHEDULER, "Slot acquired but task transition QUEUED -> ASSIGNED failed for task=" + std::to_string(task.getId()));
-            worker_manager_.releaseSlot(selected_worker->getId());
-            continue;
-        }
-
-        assignments.push_back({task.getId(), selected_worker->getId()});
-
-        LOG_INFO(LogModule::SCHEDULER, "task=" + std::to_string(task.getId()) + " assigned worker=" + selected_worker->getId());
+    } catch (...) {
+        // Strings, vector growth, worker snapshots and queue copies can all fail.
+        for (size_t i = 0; i < acquired; ++i)
+            worker_manager_.releaseSlot(assignments[i].worker_id);
+        throw;
     }
-
+    // All potentially allocating work is complete. No logging after commit.
+    for (auto& change : changes) *change.first = std::move(change.second);
+    task_queue_.swap(pending);
     return assignments;
 }
+
+std::optional<bool> Scheduler::dispatchAssignment(
+    const TaskAssignment& assignment, WorkerDispatcher& dispatcher) {
+    std::optional<Task> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = tasks_.find(assignment.task_id);
+        if (it == tasks_.end() || it->second.getStatus() != TaskStatus::ASSIGNED ||
+            it->second.getWorkerId() != assignment.worker_id ||
+            dispatching_.count(assignment.task_id)) return std::nullopt;
+        snapshot = it->second; // allocate before establishing the claim
+        dispatching_.insert(assignment.task_id);
+    }
+    try {
+        const bool accepted = dispatcher.dispatch(assignment.worker_id, *snapshot);
+        std::lock_guard<std::mutex> lock(mutex_);
+        dispatching_.erase(assignment.task_id);
+        return accepted;
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        dispatching_.erase(assignment.task_id);
+        throw;
+    }
+}
+
 
 bool Scheduler::completeTask(TaskId task_id, TaskStatus final_status) {
     if (!isValidFinalStatus(final_status)) {
@@ -163,6 +166,7 @@ bool Scheduler::completeTask(TaskId task_id, TaskStatus final_status) {
 
 bool Scheduler::cancelTask(TaskId task_id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (dispatching_.count(task_id)) return false;
 
     auto it = tasks_.find(task_id);
     if (it == tasks_.end()) {
@@ -320,6 +324,7 @@ bool Scheduler::markTaskStarted(TaskId task_id, const WorkerId& worker_id) {
 
 bool Scheduler::rollbackAssignment(TaskId task_id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (dispatching_.count(task_id)) return false;
 
     auto it = tasks_.find(task_id);
     if (it == tasks_.end()) {
@@ -353,7 +358,7 @@ bool Scheduler::rollbackAssignment(TaskId task_id) {
 
     task_queue_.push({task.getId(), task.getPriority(), next_sequence_++});
 
-    LOG_INFO(LogModule::SCHEDULER, "task=" + std::to_string(task_id) + " rolled back to queue");
+    // No allocating diagnostics after the state change.
 
     return true;
 }

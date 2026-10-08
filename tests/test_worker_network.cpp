@@ -84,8 +84,16 @@ int main() { return testMain([] {
     auto d = connectTo(host.port); response(d.value, reg, true);
     response(d.value, finish, true); response(d.value, finish, false);
     CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 0);
-    sendJson(d.value, heartbeat); CHECK(::shutdown(d.value, SHUT_WR) == 0);
-    CHECK(receiveJson(d.value)["data"]["code"] == 0); d.reset();
+    // A half-close may accompany more frames than one read turn can consume.
+    std::vector<char> burst;
+    auto heartbeat_frame = MessageCodec::encode(heartbeat.dump());
+    for (int n = 0; n < 150; ++n)
+        burst.insert(burst.end(), heartbeat_frame.begin(), heartbeat_frame.end());
+    sendBytes(d.value, burst.data(), burst.size());
+    CHECK(::shutdown(d.value, SHUT_WR) == 0);
+    for (int n = 0; n < 150; ++n)
+        CHECK(receiveJson(d.value)["data"]["code"] == 0);
+    d.reset();
     eventually([&] { return !host.worker.getWorkerConnectionRegistry().hasConnection("w"); });
     Task unsent(999, TaskType::REGRESSION, "x", "r");
     NetworkWorkerDispatcher dispatcher(host.worker.getWorkerConnectionRegistry());

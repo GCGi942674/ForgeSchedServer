@@ -12,6 +12,8 @@
 
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
+  static constexpr size_t kReadBudgetBytes = 64 * 1024;
+  static constexpr size_t kReadBudgetMessages = 64;
   using MessageCallback = std::function<void(
       const std::shared_ptr<Connection> &conn, const std::string &)>;
 

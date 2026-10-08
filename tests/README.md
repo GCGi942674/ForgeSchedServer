@@ -1,11 +1,12 @@
 # Current-stage regression tests
 
-These tests are maintained for the external mirror. They do not claim to be a
-copy of the unavailable internal Claude Code acceptance suite.
+The external WSL checkout is now the primary development line; the internal
+deployment consumes this code. These tests do not claim to be a copy of the
+unavailable internal Claude Code acceptance suite.
 
-The synchronized milestone remains the scheduling core plus WorkerSession /
-WorkerServer network integration. No client submission endpoint, automatic
-scheduling, persistence, real executor, or recovery feature is added here.
+The current milestone includes the scheduling core, automatic scheduling driver,
+and WorkerSession / WorkerServer network integration. No client submission
+endpoint, persistence, real executor, or recovery feature is added here.
 
 ## Run on Linux / WSL
 
@@ -30,7 +31,20 @@ cmake --build build/sanitized -j4
 (cd build/sanitized && ctest --output-on-failure)
 ```
 
-Validated on 2026-09-23 with WSL Ubuntu / GCC 13.3:
+Validated on 2026-10-08 with WSL Ubuntu / GCC 13.3:
+
+- Current Release build: 13/13 passed.
+- Dispatch cancellation, scheduler exception safety, connection limits and worker
+  network tests: 30 consecutive passes each.
+- Independent Debug ASan + UBSan build in a temporary directory: 13/13 passed,
+  no sanitizer diagnostics.
+- Fault injection tries 100 allocation budgets for schedule and 140 for the
+  coordinator, with continued allocation failure until disarmed, then checks
+  recovery and no duplicate accepted dispatch.
+- CMake 3.15.2 and the internal runtime were not re-tested in this round.
+  No real executor/production workload is covered.
+
+Historical validation on 2026-09-23 with WSL Ubuntu / GCC 13.3:
 
 - Fresh Debug build from the Windows-mounted checkout: 8/8 tests passed.
 - Worker network and server-process tests: 30 consecutive passes each.
@@ -51,6 +65,11 @@ Validated on 2026-09-23 with WSL Ubuntu / GCC 13.3:
 | test_protocol | Partial/coalesced frames, size cap, malformed envelopes, integer boundaries, Router submit/query/cancel, Config parsing |
 | test_worker_network | Real framed TCP traffic, role/identity checks, stale connection replacement, assignment/start/result, disconnect reservations, half-close, weak registry ownership, unavailable dispatcher, live-connection shutdown |
 | test_server_process | Actual server executable, registration, SIGTERM/SIGINT, invalid configuration, occupied-port startup failure |
+| test_scheduling_driver | Request coalescing, reentry, concurrent submissions, failed/throwing dispatch and slot accounting |
+| test_automatic_scheduling | Real TCP registration and result events dispatch queued work without manual scheduling |
+| test_dispatch_cancellation | Cancellation before a dispatch claim skips sending; cancellation/rollback during dispatch fails without releasing slots |
+| test_scheduler_exception_safety | Persistent allocation-failure injection across schedule/coordinator, retry recovery, no-allocation rollback |
+| test_connection_limits | Immediate oversized-header rejection, byte/message budgets, maximum-size and fragmented frames |
 
 New checks remain active in Release builds. Existing assert-based tests are built
 with assertions enabled. Socket operations have deadlines; the process fixture
@@ -61,20 +80,30 @@ process. Legacy Echo tests retain their existing fixed ports.
 
 ## Boundaries to preserve for the next internal sync
 
-- `WorkerServer::runOnce()` is invoked explicitly by the integration test, not
-  automatically by production `main`.
+- Registration after binding, task submission/cancellation, and accepted task
+  results trigger the SchedulingDriver. WorkerServer::runOnce remains a manual
+  API; the automatic network integration test does not call it.
 - A successful dispatch means acceptance into the connection's owner-loop queue,
   not confirmation that the remote worker received or executed it.
 - Disconnecting does not release ASSIGNED/RUNNING reservations or retry tasks.
 - Cancellation tests pin the current local state/slot behavior; they do not prove
   a remote executor has stopped. Remote cancellation acknowledgement remains a
   prerequisite before real execution can safely reuse that capacity.
-- Allocation-failure exception safety and production-scale endurance are not
-  established by ordinary rollback and smoke tests.
+- Schedule prepares task/queue changes before committing and releases all slots
+  acquired by an aborted preparation. Rollback queue capacity is reserved during
+  submission/scheduling. Allocation-failure tests cover these paths, not every
+  subsystem, OS resource failure, or production-scale endurance.
+- A dispatch claim and cancellation are serialized by the scheduler mutex.
+  While dispatch is in flight, cancelTask returns false (retry after completion);
+  it does not wait, avoiding callback reentry deadlock. This is not remote cancel.
+- Receive processing reads one bounded frame at a time, with 64 KiB / 64 messages
+  per turn. Level-triggered epoll continues the next turn, including buffered
+  data before TCP EOF; worker network tests include a 150-frame half-close burst.
 - Mutable WorkerServer service getters are for controlled setup/inspection; a
   future concurrent control endpoint must honor the host serialization boundary.
-- The historical master MD is absent from this checkout. Compare the next
-  internal sync against its current authoritative MD before advancing milestones.
+- The historical master MD is absent from this checkout and the retained Windows
+  backup. The next feature milestone must be agreed rather than inferred from
+  the old internal implementation schedule.
 
 ## Build entry point and internal toolchain
 

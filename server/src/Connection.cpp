@@ -2,6 +2,8 @@
 #include "Logging.h"
 #include "Utils.h"
 #include <cstring>
+#include <algorithm>
+#include <arpa/inet.h>
 #include <errno.h>
 #include <iostream>
 #include <sstream>
@@ -30,87 +32,68 @@ Connection::~Connection() {
 int Connection::fd() const { return fd_; }
 
 Connection::ReadResult Connection::handleRead() {
-  ReadResult read_res;
-
+  ReadResult result;
   char buffer[4096];
-
-  while (true) {
-    ssize_t n = recv(this->fd_, buffer, sizeof(buffer), 0);
-
-    if (n > 0) {
-      this->refreshActivity();
-      std::ostringstream oss;
-      oss << "recv success, fd=" << this->fd_ << ", bytes=" << n;
-      LOG_DEBUG(LogModule::NETWORK, oss.str());
-      this->inputBuffer_.append(buffer, static_cast<size_t>(n));
-
-      read_res.bytes_received += n;
-
-    } else if (n == 0) {
-      std::ostringstream oss;
-      oss << "peer closed connection, fd=" << this->fd_;
-      LOG_INFO(LogModule::NETWORK, oss.str());
-      this->shutdown();
-      read_res.peer_close = true;
-      break;
-    } else {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        break;
+  // EchoServer uses level-triggered epoll: unread kernel data schedules another turn.
+  while (result.messages_decoded < kReadBudgetMessages) {
+    size_t frame_size = MessageCodec::kHeaderLength;
+    if (inputBuffer_.readableBytes() >= MessageCodec::kHeaderLength) {
+      uint32_t body_size;
+      std::memcpy(&body_size, inputBuffer_.peek(), sizeof(body_size));
+      body_size = ntohl(body_size);
+      if (body_size > MessageCodec::kMaxBodyLenght) {
+        setState(ConnState::Disconnected);
+        result.ok = false;
+        result.decode_error = true;
+        return result;
       }
-      if (errno == EINTR) {
+      frame_size += body_size;
+      if (inputBuffer_.readableBytes() == frame_size) {
+        std::string message;
+        const auto decoded = MessageCodec::Decoder::tryDecode(inputBuffer_, message);
+        if (decoded != MessageCodec::DecodeResult::Ok) {
+          setState(ConnState::Disconnected);
+          result.ok = false;
+          result.decode_error = true;
+          return result;
+        }
+        ++result.messages_decoded;
+        if (message == "__ping__") ++result.heartbeat_messages;
+        if (on_message_) {
+          incPendingTasks();
+          on_message_(shared_from_this(), message);
+        }
+        if (isDisconnected()) return result;
         continue;
       }
-      std::ostringstream oss;
-      oss << "recv failed, fd=" << this->fd_ << ", errno=" << errno << ", err=" << strerror(errno);
-      LOG_ERROR(LogModule::NETWORK, oss.str());
-      this->setState(ConnState::Disconnected);
-      read_res.ok = false;
-      return read_res;
     }
-  }
-  std::string msg;
-  while (true) {
-    auto result = MessageCodec::Decoder::tryDecode(this->inputBuffer_, msg);
-
-    if (result == MessageCodec::DecodeResult::Ok) {
-      std::ostringstream oss;
-      oss << "message decoded, fd=" << this->fd_ << ", msg_size=" << msg.size();
-      LOG_DEBUG(LogModule::NETWORK, oss.str());
-      read_res.messages_decoded++;
-      if (msg == "__ping__") {
-        read_res.heartbeat_messages++;
-      }
-
-      if (this->on_message_) {
-        this->incPendingTasks();
-        this->on_message_(this->shared_from_this(), msg);
-
-      } else {
-        std::ostringstream oss;
-        oss << "message callback not set, fd=" << this->fd_;
-        LOG_WARN(LogModule::NETWORK, oss.str());
-      }
-      continue;
-    }
-
-    if (result == MessageCodec::DecodeResult::NeedMoreData) {
-      std::ostringstream oss;
-      oss << "decode need more data, fd=" << this->fd_;
-      LOG_DEBUG(LogModule::NETWORK, oss.str());
+    if (result.bytes_received >= kReadBudgetBytes) break;
+    // Never read past this frame. The input buffer holds at most one bounded frame.
+    const size_t amount = std::min({sizeof(buffer),
+        frame_size - inputBuffer_.readableBytes(),
+        kReadBudgetBytes - static_cast<size_t>(result.bytes_received)});
+    const ssize_t n = ::recv(fd_, buffer, amount, 0);
+    if (n > 0) {
+      refreshActivity();
+      inputBuffer_.append(buffer, static_cast<size_t>(n));
+      result.bytes_received += static_cast<size_t>(n);
+    } else if (n == 0) {
+      shutdown();
+      result.peer_close = true;
       break;
+    } else if (errno == EINTR) {
+      continue;
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      break;
+    } else {
+      setState(ConnState::Disconnected);
+      result.ok = false;
+      return result;
     }
-
-    std::ostringstream oss;
-    oss << "invalid packet, fd=" << this->fd_;
-    LOG_WARN(LogModule::NETWORK, oss.str());
-    this->setState(ConnState::Disconnected);
-    read_res.ok = false;
-    read_res.decode_error = true;
-    return read_res;
   }
-
-  return read_res;
+  return result;
 }
+
 
 Connection::WriteResult Connection::handleWrite() {
   WriteResult write_res;

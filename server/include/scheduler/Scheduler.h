@@ -11,8 +11,11 @@
 #include <queue>
 #include <mutex>
 #include <cstdint>
+#include <unordered_set>
+#include <algorithm>
 
 namespace ForgeSched {
+class WorkerDispatcher;
 
 struct TaskAssignment {
     TaskId task_id;
@@ -30,6 +33,9 @@ public:
 
     bool markTaskStarted(TaskId task_id, const WorkerId& worker_id);
     bool rollbackAssignment(TaskId task_id);
+    // nullopt: assignment was cancelled/replaced before the dispatch claim.
+    // Cancellation/rollback returns false while the dispatcher is in flight.
+    std::optional<bool> dispatchAssignment(const TaskAssignment&, WorkerDispatcher&);
 
     std::optional<Task> getTask(TaskId id) const;
     std::vector<Task> getTasks() const;
@@ -54,7 +60,14 @@ private:
 
     WorkerManager& worker_manager_;
     std::unordered_map<TaskId, Task> tasks_;
-    std::priority_queue<QueuedTaskInfo, std::vector<QueuedTaskInfo>, std::greater<QueuedTaskInfo>> task_queue_;
+    struct TaskQueue : std::priority_queue<QueuedTaskInfo, std::vector<QueuedTaskInfo>, std::greater<QueuedTaskInfo>> {
+        void reserve(size_t count) {
+            if (this->c.capacity() < count)
+                this->c.reserve(std::max(count, this->c.capacity() * 2));
+        }
+    };
+    TaskQueue task_queue_;
+    std::unordered_set<TaskId> dispatching_;
     uint64_t next_sequence_;
     mutable std::mutex mutex_;
 
