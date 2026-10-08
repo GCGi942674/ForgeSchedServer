@@ -36,10 +36,17 @@ int main() { return testMain([] {
         CHECK(f.scheduler.getTask(*a)->getStatus() == TaskStatus::ASSIGNED);
         auto b = f.service.createTask({TaskType::REGRESSION, "b", "r", 0}); CHECK(b);
         CHECK(f.scheduler.getTask(*b)->getStatus() == TaskStatus::QUEUED);
-        CHECK(f.service.cancelTask(*a));
+        CHECK(!f.service.cancelTask(*a));
+        CHECK(f.scheduler.getTask(*b)->getStatus() == TaskStatus::QUEUED);
+        CHECK(f.workers.getWorker("w")->getUsedSlots() == 1);
+        CHECK(f.scheduler.markTaskStarted(*a, "w"));
+        CHECK(f.scheduler.completeTask(*a, TaskStatus::SUCCEEDED));
+        f.driver.requestSchedule();
         CHECK(f.scheduler.getTask(*b)->getStatus() == TaskStatus::ASSIGNED);
         CHECK(f.dispatcher.calls == 2);
-        CHECK(f.service.cancelTask(*b));
+        CHECK(!f.service.cancelTask(*b));
+        CHECK(f.scheduler.markTaskStarted(*b, "w"));
+        CHECK(f.scheduler.completeTask(*b, TaskStatus::SUCCEEDED));
         CHECK(f.workers.getWorker("w")->getUsedSlots() == 0);
         CHECK(f.scheduler.getTasks().size() == 2);
     }

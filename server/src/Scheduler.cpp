@@ -186,45 +186,10 @@ bool Scheduler::cancelTask(TaskId task_id) {
             return true;
         }
 
-        case TaskStatus::ASSIGNED: {
-            if (task.getWorkerId().empty()) {
-                LOG_ERROR(LogModule::SCHEDULER, "Task in ASSIGNED state has no worker_id: " + std::to_string(task_id));
-                return false;
-            }
-
-            if (!task.transitionTo(TaskStatus::CANCELLED)) {
-                LOG_ERROR(LogModule::SCHEDULER, "Task transition ASSIGNED -> CANCELLED failed for task=" + std::to_string(task_id));
-                return false;
-            }
-
-            if (!worker_manager_.releaseSlot(task.getWorkerId())) {
-                LOG_ERROR(LogModule::SCHEDULER, "Worker slot release failed after task cancellation for task=" + std::to_string(task_id));
-                return false;
-            }
-
-            LOG_INFO(LogModule::TASK, "task=" + std::to_string(task_id) + " cancelled");
-            return true;
-        }
-
-        case TaskStatus::RUNNING: {
-            if (task.getWorkerId().empty()) {
-                LOG_ERROR(LogModule::SCHEDULER, "Task in RUNNING state has no worker_id: " + std::to_string(task_id));
-                return false;
-            }
-
-            if (!task.transitionTo(TaskStatus::CANCELLED)) {
-                LOG_ERROR(LogModule::SCHEDULER, "Task transition RUNNING -> CANCELLED failed for task=" + std::to_string(task_id));
-                return false;
-            }
-
-            if (!worker_manager_.releaseSlot(task.getWorkerId())) {
-                LOG_ERROR(LogModule::SCHEDULER, "Worker slot release failed after task cancellation for task=" + std::to_string(task_id));
-                return false;
-            }
-
-            LOG_INFO(LogModule::TASK, "task=" + std::to_string(task_id) + " cancelled");
-            return true;
-        }
+        case TaskStatus::ASSIGNED:
+        case TaskStatus::RUNNING:
+            // No remote cancellation ACK exists yet. Never release a live slot.
+            return false;
 
         case TaskStatus::PENDING:
             if (!task.transitionTo(TaskStatus::CANCELLED)) {

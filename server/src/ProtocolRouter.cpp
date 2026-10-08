@@ -91,7 +91,8 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             }
             bool success = task_service_.cancelTask(cancel_req.task_id);
             if (!success) {
-                return buildResponse(request, ResponseCode::INVALID_STATE, "task cannot be cancelled in its current state");
+                return buildResponse(request, ResponseCode::INVALID_STATE,
+                    "only PENDING/QUEUED tasks can be cancelled; remote cancellation is not supported");
             }
 
             return buildResponse(request, ResponseCode::OK, "ok");

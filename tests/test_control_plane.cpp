@@ -50,6 +50,9 @@ int main() { return testMain([] {
     auto assignment = receiveJson(worker.value);
     CHECK(assignment["type"] == "task_assign" && assignment["data"]["task_id"] == id);
     CHECK(assignment["data"]["target"] == "network-case");
+    CHECK(api.cancel(id).data["code"] == 3);
+    CHECK(api.query(id).data["result"]["status"] == "ASSIGNED");
+    CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 1);
     for (auto type : {"submit_task", "query_task", "cancel_task", "task_assign", "response"}) {
         auto bad = envelope(type, {{"task_id", id}, {"task_type", "REGRESSION"}, {"target", "x"}, {"revision", "r"}});
         CHECK(exchangeJson(worker.value, bad)["code"] == 1);
@@ -57,6 +60,9 @@ int main() { return testMain([] {
     response(worker.value, registration, true); // Idempotent registration retains WORKER.
     response(worker.value, envelope("task_start", {{"task_id", id}, {"worker_id", "w"}}), true);
     CHECK(api.query(id).data["result"]["status"] == "RUNNING");
+    CHECK(api.cancel(id).data["code"] == 3);
+    CHECK(api.query(id).data["result"]["status"] == "RUNNING");
+    CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 1);
     auto finish = envelope("task_result", {{"task_id", id}, {"worker_id", "w"}, {"status", "SUCCEEDED"}});
     response(worker.value, finish, true);
     CHECK(api.query(id).data["result"]["status"] == "SUCCEEDED");

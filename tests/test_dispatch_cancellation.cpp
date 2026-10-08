@@ -18,12 +18,14 @@ int main() { return testMain([] {
         dispatcher.action = [&](const Task& task) {
             ++sent;
             CHECK(task.getId() == 1);
-            CHECK(scheduler.cancelTask(2)); // Cancel a later entry in the same batch.
+            CHECK(!scheduler.cancelTask(2)); // ASSIGNED cannot be cancelled.
+            CHECK(scheduler.rollbackAssignment(2)); // Unsent assignment may still roll back.
             return true;
         };
         auto result = coordinator.runOnce();
         CHECK(sent == 1 && result.dispatched_count == 1);
-        CHECK(scheduler.getTask(2)->getStatus() == TaskStatus::CANCELLED);
+        CHECK(scheduler.getTask(2)->getStatus() == TaskStatus::QUEUED);
+        CHECK(scheduler.cancelTask(2));
         CHECK(workers.getWorker("w")->getUsedSlots() == 1);
     }
     for (int outcome : {0, 1, 2}) {
@@ -58,6 +60,11 @@ int main() { return testMain([] {
         if (error) std::rethrow_exception(error);
         CHECK(!cancelled && !rolled_back && slots == 1);
         CHECK(workers.getWorker("w")->getUsedSlots() == (outcome == 1 ? 1u : 0u));
-        CHECK(scheduler.cancelTask(1)); // Claim is released on success, failure and throw.
+        CHECK(scheduler.cancelTask(1) == (outcome != 1));
+        // Only rejected/thrown dispatches return to QUEUED and become cancellable.
+        if (outcome == 1) {
+            CHECK(scheduler.getTask(1)->getStatus() == TaskStatus::ASSIGNED);
+            CHECK(workers.getWorker("w")->getUsedSlots() == 1);
+        }
     }
 }); }

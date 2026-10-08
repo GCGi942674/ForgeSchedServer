@@ -84,7 +84,7 @@ Historical validation on 2026-09-23 with WSL Ubuntu / GCC 13.3:
 | test_server_process | Actual server executable, registration, SIGTERM/SIGINT, invalid configuration, occupied-port startup failure |
 | test_scheduling_driver | Request coalescing, reentry, concurrent submissions, failed/throwing dispatch and slot accounting |
 | test_automatic_scheduling | Real TCP registration and result events dispatch queued work without manual scheduling |
-| test_dispatch_cancellation | Cancellation before a dispatch claim skips sending; cancellation/rollback during dispatch fails without releasing slots |
+| test_dispatch_cancellation | Rollback before a dispatch claim skips sending; assigned/in-flight cancellation is refused without releasing slots; failed dispatch requeues and permits cancellation |
 | test_scheduler_exception_safety | Persistent allocation-failure injection across schedule/coordinator, retry recovery, no-allocation rollback |
 | test_connection_limits | Immediate oversized-header rejection, byte/message budgets, maximum-size and fragmented frames |
 | test_control_plane | Role matrix, complete TCP Client/Mock Worker flow, query/cancel, framing, size limits and concurrent external submissions |
@@ -106,15 +106,15 @@ process. Legacy Echo tests retain their existing fixed ports.
 - A successful dispatch means acceptance into the connection's owner-loop queue,
   not confirmation that the remote worker received or executed it.
 - Disconnecting does not release ASSIGNED/RUNNING reservations or retry tasks.
-- Cancellation tests pin the current local state/slot behavior; they do not prove
-  a remote executor has stopped. Remote cancellation acknowledgement remains a
-  prerequisite before real execution can safely reuse that capacity.
+- Cancellation is restricted to PENDING/QUEUED under the scheduler mutex.
+  ASSIGNED/RUNNING requests are rejected without changing status or slots.
+  Remote cancellation acknowledgement remains unimplemented.
 - Schedule prepares task/queue changes before committing and releases all slots
   acquired by an aborted preparation. Rollback queue capacity is reserved during
   submission/scheduling. Allocation-failure tests cover these paths, not every
   subsystem, OS resource failure, or production-scale endurance.
 - A dispatch claim and cancellation are serialized by the scheduler mutex.
-  While dispatch is in flight, cancelTask returns false (retry after completion);
+  While dispatch is in flight or the task remains assigned/running, cancelTask returns false;
   it does not wait, avoiding callback reentry deadlock. This is not remote cancel.
 - Receive processing reads one bounded frame at a time, with 64 KiB / 64 messages
   per turn. Level-triggered epoll continues the next turn, including buffered
@@ -122,8 +122,8 @@ process. Legacy Echo tests retain their existing fixed ports.
 - Mutable WorkerServer service getters are for controlled setup/inspection; a
   future concurrent control endpoint must honor the host serialization boundary.
 - The agreed v0.1 milestone is Client network entry plus role policy and
-  SUBMIT/QUERY/CANCEL closure. QUERY_REGRESSION, Python process execution,
-  SQLite, cache and GUI are intentionally not part of this change.
+  SUBMIT/QUERY/CANCEL closure. The demo Python process Worker is now covered too;
+  real PJtest execution, QUERY_REGRESSION, SQLite, cache and GUI remain pending.
 
 ## Build entry point and internal toolchain
 

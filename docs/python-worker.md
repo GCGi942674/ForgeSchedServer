@@ -22,11 +22,9 @@ SIGINT/SIGTERM 或连接错误同样清理子进程。结果响应和下一次�
 断线不自动重连、不重放任务；未确认结果需人工核对，Server 暂无恢复机制。
 
 重要限制：
-- 暂不支持远程取消。不要取消 ASSIGNED/RUNNING 的真实进程任务。
-  现有 Server 本地取消会释放 slot，但不停止进程；Worker 遇到额外派发会
-  拒绝并断开，清理当前进程，避免超额运行。这不等于完整取消语义。
+- 暂不支持远程取消。Server 已强制拒绝 ASSIGNED/RUNNING 的取消请求，
+  返回 INVALID_STATE 且不释放 slot。仅 PENDING/QUEUED 可取消。
 - 退出或断线后，Server 可能保留 ASSIGNED/RUNNING；暂无 Worker lost recovery。
 - 无认证/TLS，只在可信网络使用；worker-id 不得与其他在线 Worker 重复。
 - 固定演示输出很小；接真实执行器前还需日志限额、资源隔离和取消协议。
 - 本阶段不加入 SQLite、缓存、Vivado 或 PJtest。
-

@@ -81,15 +81,24 @@ int main() { return testMain([] {
     std::sort(top.begin(), top.end());
     for (auto expected : top) {
         auto a = scheduler.schedule(); CHECK(a.size() == 1 && a[0].task_id == expected);
-        CHECK(scheduler.cancelTask(expected)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
+        CHECK(!scheduler.cancelTask(expected));
+        CHECK(workers.getWorker("w")->getUsedSlots() == 1);
+        CHECK(scheduler.markTaskStarted(expected, "w"));
+        CHECK(scheduler.completeTask(expected, TaskStatus::SUCCEEDED));
+        CHECK(workers.getWorker("w")->getUsedSlots() == 0);
     }
     auto a = scheduler.schedule(); CHECK(a.size() == 1);
     CHECK(scheduler.markTaskStarted(a[0].task_id, "w"));
-    CHECK(scheduler.cancelTask(a[0].task_id)); CHECK(workers.getWorker("w")->getUsedSlots() == 0);
+    CHECK(!scheduler.cancelTask(a[0].task_id));
+    CHECK(workers.getWorker("w")->getUsedSlots() == 1);
+    CHECK(scheduler.completeTask(a[0].task_id, TaskStatus::SUCCEEDED));
+    CHECK(workers.getWorker("w")->getUsedSlots() == 0);
     CHECK(workers.registerWorker("big", "host", std::numeric_limits<uint32_t>::max()));
     CHECK(createQueued({TaskType::REGRESSION, "x", "r", 0}));
     a = scheduler.schedule(); CHECK(a.size() == 1 && a[0].worker_id == "big");
-    CHECK(scheduler.cancelTask(a[0].task_id));
+    CHECK(!scheduler.cancelTask(a[0].task_id));
+    CHECK(scheduler.markTaskStarted(a[0].task_id, "big"));
+    CHECK(scheduler.completeTask(a[0].task_id, TaskStatus::SUCCEEDED));
     for (auto final : {TaskStatus::FAILED, TaskStatus::TIMEOUT}) {
         auto next = createQueued({TaskType::REGRESSION, "x", "r", 0}); CHECK(next);
         auto batch = scheduler.schedule(); CHECK(batch.size() == 1);

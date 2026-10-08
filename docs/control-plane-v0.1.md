@@ -103,13 +103,9 @@ Worker ID 上限 256 字节，hostname 上限 1024 字节。这些约束给查�
 
 ## 取消与执行边界
 
-CANCEL_TASK 仍沿用当前本地状态/slot 语义：
-QUEUED 可取消；ASSIGNED/RUNNING 在未处于派发临界区时也可本地取消，
-但这不会向 Worker 发送停止指令，更不表示执行进程已经停止。
-正在派发时取消返回 INVALID_STATE，可在确认状态后重试；终态任务不重复取消。
-
-因此本阶段只用 Mock Worker 验证控制面。接入真实执行器前必须明确运行中取消
-策略，不能把本地释放 slot 当作远程进程结束。远程 SIGTERM/ACK 流程不在本阶段实现。
+CANCEL_TASK 仅允许 PENDING/QUEUED，状态检查与取消在 Scheduler 同一把锁内完成。
+ASSIGNED/RUNNING 返回 INVALID_STATE(code=3)，状态和 slot 保持不变；
+终态任务不重复取消。远程 SIGTERM/ACK 尚未实现，不返回虚假的取消成功。
 
 ## 验收与后续
 

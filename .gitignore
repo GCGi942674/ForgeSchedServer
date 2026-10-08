@@ -4,6 +4,8 @@ cmake-build-*/
 out/
 CMakeFiles/
 bin/
+reference/
+/tmp
 
 # Object files & binaries
 *.cmake
