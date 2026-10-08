@@ -1,5 +1,11 @@
 # client/CMakeLists.txt
 
+add_library(forgesched_client_api STATIC src/ForgeClient.cpp)
+target_include_directories(forgesched_client_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(forgesched_client_api PUBLIC common)
+add_executable(forgesched_client src/ForgeClientMain.cpp)
+target_link_libraries(forgesched_client PRIVATE forgesched_client_api)
+
 add_executable(client
     src/main.cpp
     src/EchoClient.cpp

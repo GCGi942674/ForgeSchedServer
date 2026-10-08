@@ -5,8 +5,9 @@ deployment consumes this code. These tests do not claim to be a copy of the
 unavailable internal Claude Code acceptance suite.
 
 The current milestone includes the scheduling core, automatic scheduling driver,
-and WorkerSession / WorkerServer network integration. No client submission
-endpoint, persistence, real executor, or recovery feature is added here.
+Worker network integration, and the v0.1 Client control plane with a C++ CLI.
+No persistence, real executor, remote process cancellation or recovery is added.
+See [control-plane usage and protocol](../docs/control-plane-v0.1.md).
 
 ## Run on Linux / WSL
 
@@ -31,7 +32,17 @@ cmake --build build/sanitized -j4
 (cd build/sanitized && ctest --output-on-failure)
 ```
 
-Validated on 2026-10-08 with WSL Ubuntu / GCC 13.3:
+Control-plane v0.1 validation (WSL Ubuntu / GCC 13.3):
+
+- Release: 16/16 passed.
+- Independent Debug ASan + UBSan build: 16/16 passed, no sanitizer diagnostics.
+- Client control plane, CLI process, client transport, standalone server process,
+  and Worker network tests: 30 consecutive passes each.
+- New production client/session sources also pass -Wall -Wextra -Wpedantic syntax checks.
+- Internal toolchain/runtime and CMake 3.15.2 were not re-tested for this change.
+  No actual PJtest/Vivado executor or production workload is covered.
+
+Stability baseline validated on 2026-10-08 (before Client entry):
 
 - Current Release build: 13/13 passed.
 - Dispatch cancellation, scheduler exception safety, connection limits and worker
@@ -70,6 +81,9 @@ Historical validation on 2026-09-23 with WSL Ubuntu / GCC 13.3:
 | test_dispatch_cancellation | Cancellation before a dispatch claim skips sending; cancellation/rollback during dispatch fails without releasing slots |
 | test_scheduler_exception_safety | Persistent allocation-failure injection across schedule/coordinator, retry recovery, no-allocation rollback |
 | test_connection_limits | Immediate oversized-header rejection, byte/message budgets, maximum-size and fragmented frames |
+| test_control_plane | Role matrix, complete TCP Client/Mock Worker flow, query/cancel, framing, size limits and concurrent external submissions |
+| test_client_cli | Actual CLI process, arguments, exit codes, full Worker flow and refused connection |
+| test_client_transport | Correlation, response schema, malformed/oversized/truncated frames, overall deadline and slow response |
 
 New checks remain active in Release builds. Existing assert-based tests are built
 with assertions enabled. Socket operations have deadlines; the process fixture
@@ -101,9 +115,9 @@ process. Legacy Echo tests retain their existing fixed ports.
   data before TCP EOF; worker network tests include a 150-frame half-close burst.
 - Mutable WorkerServer service getters are for controlled setup/inspection; a
   future concurrent control endpoint must honor the host serialization boundary.
-- The historical master MD is absent from this checkout and the retained Windows
-  backup. The next feature milestone must be agreed rather than inferred from
-  the old internal implementation schedule.
+- The agreed v0.1 milestone is Client network entry plus role policy and
+  SUBMIT/QUERY/CANCEL closure. QUERY_REGRESSION, Python process execution,
+  SQLite, cache and GUI are intentionally not part of this change.
 
 ## Build entry point and internal toolchain
 

@@ -2,6 +2,7 @@
 #include "task/Task.h"
 #include "task/TaskType.h"
 #include "task/TaskStatus.h"
+#include "task/TaskLimits.h"
 #include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
 
@@ -19,6 +20,11 @@ TaskService::TaskService(Scheduler& scheduler, SchedulingDriver& scheduling_driv
 }
 
 std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) {
+    if (request.target.size() > kMaxTaskMetadataBytes ||
+        request.revision.size() > kMaxTaskMetadataBytes - request.target.size()) {
+        LOG_WARN(LogModule::TASK, "Task metadata exceeds size limit");
+        return std::nullopt;
+    }
     if (request.type == TaskType::UNKNOWN) {
         LOG_WARN(LogModule::TASK, "Invalid create request: unknown task type");
         return std::nullopt;

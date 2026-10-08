@@ -1,4 +1,5 @@
 #include "worker/WorkerManager.h"
+#include "task/TaskLimits.h"
 #include "logger/Logger.h"
 #include "logger/LogModule.h"
 #include "Logging.h"
@@ -10,8 +11,9 @@ bool WorkerManager::registerWorker(
     const std::string& hostname,
     uint32_t slots
 ) {
-    if (worker_id.empty()) {
-        LOG_ERROR(LogModule::WORKER, "Invalid worker registration: empty worker_id");
+    if (worker_id.empty() || worker_id.size() > kMaxWorkerIdBytes ||
+        hostname.size() > kMaxWorkerHostnameBytes) {
+        LOG_ERROR(LogModule::WORKER, "Invalid worker registration: empty or oversized identity");
         return false;
     }
 

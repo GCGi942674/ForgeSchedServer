@@ -13,6 +13,7 @@
 #include <mutex>
 #include <unordered_map>
 #include "worker/WorkerSession.h"
+#include "ConnectionSession.h"
 
 namespace ForgeSched {
 
@@ -41,7 +42,7 @@ private:
     std::unique_ptr<TaskService> task_service_ptr_;
     std::unique_ptr<Protocol::ProtocolRouter> router_ptr_;
     std::mutex session_mutex_;
-    std::unordered_map<Connection*, std::unique_ptr<WorkerSession>> sessions_;
+    std::unordered_map<Connection*, std::unique_ptr<ConnectionSession>> sessions_;
 };
 
 } // namespace ForgeSched

@@ -21,3 +21,20 @@ foreach(name test_scheduler test_protocol test_worker_network test_server_proces
   set_tests_properties(${name} PROPERTIES TIMEOUT 45)
 endforeach()
 add_dependencies(test_server_process server)
+target_link_libraries(test_server_process PRIVATE forgesched_client_api)
+
+add_executable(test_control_plane test_control_plane.cpp)
+target_link_libraries(test_control_plane PRIVATE forgesched_server_core forgesched_client_api)
+add_test(NAME test_control_plane COMMAND test_control_plane)
+set_tests_properties(test_control_plane PROPERTIES TIMEOUT 45)
+
+add_executable(test_client_cli test_client_cli.cpp)
+target_link_libraries(test_client_cli PRIVATE forgesched_server_core)
+add_dependencies(test_client_cli forgesched_client)
+add_test(NAME test_client_cli COMMAND test_client_cli $<TARGET_FILE:forgesched_client>)
+set_tests_properties(test_client_cli PROPERTIES TIMEOUT 45)
+
+add_executable(test_client_transport test_client_transport.cpp)
+target_link_libraries(test_client_transport PRIVATE forgesched_client_api)
+add_test(NAME test_client_transport COMMAND test_client_transport)
+set_tests_properties(test_client_transport PROPERTIES TIMEOUT 45)

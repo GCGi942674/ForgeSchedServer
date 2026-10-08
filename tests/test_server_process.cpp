@@ -1,4 +1,5 @@
 #include "TestSupport.h"
+#include "ForgeClient.h"
 #include <filesystem>
 #include <fstream>
 #include <sys/wait.h>
@@ -32,6 +33,15 @@ int main(int argc, char** argv) { return testMain([&] {
         int port = freePort(); configure(port); Child child; launch(child);
         auto conn = connectTo(port);
         response(conn.value, envelope("worker_register", {{"worker_id", "process"}, {"hostname", "h"}, {"slots", 1u}}), true);
+        ForgeSched::ForgeClient client("127.0.0.1", port);
+        auto submitted = client.submit("process-control", "r");
+        CHECK(submitted.data["code"] == 0);
+        const auto id = submitted.data["result"]["task_id"].get<uint64_t>();
+        CHECK(receiveJson(conn.value)["data"]["task_id"] == id);
+        response(conn.value, envelope("task_start", {{"task_id", id}, {"worker_id", "process"}}), true);
+        response(conn.value, envelope("task_result",
+            {{"task_id", id}, {"worker_id", "process"}, {"status", "SUCCEEDED"}}), true);
+        CHECK(client.query(id).data["result"]["status"] == "SUCCEEDED");
         CHECK(::kill(child.pid, sig) == 0); CHECK(child.wait() == 0);
     }
     configure(70000); Child invalid; launch(invalid); CHECK(invalid.wait() == 1);

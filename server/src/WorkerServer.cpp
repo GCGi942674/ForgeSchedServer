@@ -29,9 +29,8 @@ void WorkerServer::attach(EchoServer& transport) {
     transport.setConnectionCallbacks(
         [this](const std::shared_ptr<Connection>& conn) {
             std::lock_guard<std::mutex> lock(session_mutex_);
-            auto session = std::make_unique<WorkerSession>(conn->ownerLoop(),
+            auto session = std::make_unique<ConnectionSession>(conn,
                 *worker_manager_ptr_, *registry_ptr_, *router_ptr_, *scheduling_driver_ptr_);
-            session->setConnection(conn);
             sessions_.emplace(conn.get(), std::move(session));
         },
         [this](const std::shared_ptr<Connection>& conn, const std::string& message) {

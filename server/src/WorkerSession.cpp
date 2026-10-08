@@ -3,6 +3,7 @@
 #include "protocol/dto/WorkerDTO.h"
 #include "protocol/dto/Response.h"
 #include "protocol/ProtocolVersion.h"
+#include "protocol/ConnectionRole.h"
 #include "protocol/Message_codec.h"
 #include "Logging.h"
 
@@ -76,9 +77,7 @@ void WorkerSession::handleRequest(const ProtocolMessage& request) {
         return;
     }
 
-    if (request.type != MessageType::WORKER_HEARTBEAT &&
-        request.type != MessageType::TASK_START &&
-        request.type != MessageType::TASK_RESULT) {
+    if (!isAllowed(ConnectionRole::WORKER, request.type)) {
         reply(request.request_id, ResponseCode::INVALID_REQUEST, "message not allowed on worker connection");
         return;
     }

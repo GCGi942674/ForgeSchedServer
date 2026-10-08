@@ -2,6 +2,7 @@
 
 add_library(forgesched_server_core STATIC
     src/Connection.cpp
+    src/ConnectionSession.cpp
     src/EchoServer.cpp
     src/EventLoop.cpp
     src/Acceptor.cpp

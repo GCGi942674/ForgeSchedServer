@@ -86,9 +86,12 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid cancel task request");
             }
 
+            if (!task_service_.getTask(cancel_req.task_id)) {
+                return buildResponse(request, ResponseCode::NOT_FOUND, "task not found");
+            }
             bool success = task_service_.cancelTask(cancel_req.task_id);
             if (!success) {
-                return buildResponse(request, ResponseCode::NOT_FOUND, "task not found or cannot be cancelled");
+                return buildResponse(request, ResponseCode::INVALID_STATE, "task cannot be cancelled in its current state");
             }
 
             return buildResponse(request, ResponseCode::OK, "ok");
