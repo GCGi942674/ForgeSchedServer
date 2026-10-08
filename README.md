@@ -9,6 +9,7 @@ Development and tests run in WSL; the internal deployment consumes this code.
 Build with `make`; run `./build/bin/server` from the repository root.
 Use `./build/bin/forgesched_client --help` for submit/query/cancel commands.
 
-Worker execution is currently simulated in tests. No persistence, real executor,
+A [single-slot Python demo Worker](docs/python-worker.md) now runs real child
+processes. It is not yet a PJtest/Vivado executor. No persistence,
 remote process cancellation or GUI is implemented. Roles are not authentication:
 use only on trusted networks, not a public Internet endpoint.

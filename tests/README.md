@@ -6,7 +6,8 @@ unavailable internal Claude Code acceptance suite.
 
 The current milestone includes the scheduling core, automatic scheduling driver,
 Worker network integration, and the v0.1 Client control plane with a C++ CLI.
-No persistence, real executor, remote process cancellation or recovery is added.
+The Python demo Worker additionally runs real subprocesses (not PJtest/Vivado).
+No persistence, remote process cancellation or recovery is added.
 See [control-plane usage and protocol](../docs/control-plane-v0.1.md).
 
 ## Run on Linux / WSL
@@ -20,7 +21,12 @@ make test BUILD_TYPE=Debug
 ```
 
 JSON is supplied by `third_party/nlohmann/json.hpp`. Build directories can be
-removed and regenerated. No Python or separate verification directory is needed.
+removed and regenerated. Python 3.8+ is required for the Worker integration test.
+Tests remain in tests/, with no separate verification directory.
+
+The new test_python_worker covers successful and failed exits, timeout, queued
+tasks, PID/log artifacts, and process cleanup on shutdown and server disconnect.
+See [Worker usage and limitations](../docs/python-worker.md).
 
 Address/undefined-behavior checks (use a separate build directory):
 

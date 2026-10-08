@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Single-slot Linux demo executor. Never executes commands from task metadata."""
+import argparse
+import json
+import math
+import os
+from pathlib import Path
+import select
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+
+MAX_FRAME = 1024 * 1024
+
+
+class Worker:
+    def __init__(self, args):
+        self.args = args
+        self.sock = None
+        self.buffer = bytearray()
+        self.sequence = 0
+        self.assigned = None
+        self.process = None
+
+    def receive(self, deadline):
+        while True:
+            if len(self.buffer) >= 4:
+                size = struct.unpack("!I", self.buffer[:4])[0]
+                if not 0 < size <= MAX_FRAME:
+                    raise RuntimeError("invalid frame size")
+                if len(self.buffer) >= size + 4:
+                    value = json.loads(self.buffer[4:4 + size])
+                    del self.buffer[:4 + size]
+                    if (not isinstance(value, dict) or type(value.get("version")) is not int
+                            or value["version"] != 1 or type(value.get("request_id")) is not int
+                            or not 0 <= value["request_id"] < 2**64
+                            or not isinstance(value.get("data"), dict)):
+                        raise RuntimeError("invalid envelope")
+                    return value
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("server response timeout")
+            if not select.select([self.sock], [], [], remaining)[0]:
+                raise TimeoutError("server response timeout")
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("server disconnected")
+            self.buffer.extend(chunk)
+
+    def assignment(self, message):
+        data = message["data"]
+        if (message.get("type") != "task_assign" or self.assigned is not None
+                or type(data.get("task_id")) is not int or not 0 < data["task_id"] < 2**64
+                or data.get("task_type") != "REGRESSION"
+                or not isinstance(data.get("target"), str)
+                or not isinstance(data.get("revision"), str)):
+            raise RuntimeError("unexpected or excess assignment")
+        self.assigned = data["task_id"]
+
+    def request(self, kind, data):
+        self.sequence += 1
+        body = json.dumps(dict(version=1, type=kind, request_id=self.sequence,
+                               data=data)).encode()
+        self.sock.sendall(struct.pack("!I", len(body)) + body)
+        deadline = time.monotonic() + 5
+        while True:
+            message = self.receive(deadline)
+            if message.get("type") == "task_assign":
+                self.assignment(message)
+                continue
+            if (message.get("type") != "response" or message["request_id"] != self.sequence
+                    or type(message["data"].get("code")) is not int
+                    or message["data"]["code"] != 0):
+                raise RuntimeError("request rejected: " + repr(message)[:500])
+            return
+
+    def stop_process(self):
+        if self.process is not None:
+            # A separate process group prevents orphan descendants on timeout/shutdown.
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            self.process.wait()
+            self.process = None
+
+    def execute(self, root):
+        task_id = self.assigned
+        self.request("task_start", dict(task_id=task_id, worker_id=self.args.worker_id))
+        directory = root / str(task_id)
+        directory.mkdir()
+        status, code, pid = "FAILED", None, None
+        try:
+            with (directory / "stdout.log").open("xb") as out, (directory / "stderr.log").open("xb") as err:
+                # Local operator configuration only; no shell, target/revision are never evaluated.
+                script = ("import sys,time; print('demo stdout',flush=True); "
+                          "print('demo stderr',file=sys.stderr,flush=True); "
+                          "time.sleep(float(sys.argv[1])); sys.exit(int(sys.argv[2]))")
+                self.process = subprocess.Popen(
+                    [sys.executable, "-u", "-c", script, str(self.args.demo_seconds),
+                     str(self.args.demo_exit_code)], stdout=out, stderr=err,
+                    start_new_session=True)
+                pid = self.process.pid
+                (directory / "pid").write_text(str(pid) + "\n")
+                deadline = time.monotonic() + self.args.task_timeout
+                heartbeat = time.monotonic()
+                while self.process.poll() is None:
+                    if time.monotonic() >= deadline:
+                        self.stop_process()
+                        status = "TIMEOUT"
+                        code = -signal.SIGKILL
+                        break
+                    if time.monotonic() >= heartbeat:
+                        self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+                        heartbeat = time.monotonic() + 1
+                    time.sleep(0.02)
+                if self.process is not None:
+                    code = self.process.wait()
+                    self.process = None
+                    status = "SUCCEEDED" if code == 0 else "FAILED"
+        finally:
+            self.stop_process()
+        result = dict(task_id=task_id, pid=pid, exit_code=code, status=status)
+        (directory / "result.json").write_text(json.dumps(result) + "\n")
+        # The server can send the next assignment before acknowledging this result.
+        self.assigned = None
+        self.request("task_result", dict(task_id=task_id, worker_id=self.args.worker_id,
+                                        status=status, message=json.dumps(result)))
+        print(json.dumps(result), flush=True)
+
+    def run(self):
+        self.args.output.mkdir(parents=True, exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix="run-", dir=str(self.args.output)))
+        try:
+            self.sock = socket.create_connection((self.args.host, self.args.port), timeout=5)
+            self.request("worker_register", dict(worker_id=self.args.worker_id,
+                                                 hostname=socket.gethostname(), slots=1))
+            while True:
+                if self.assigned is not None:
+                    self.execute(root)
+                else:
+                    try:
+                        self.assignment(self.receive(time.monotonic() + 1))
+                    except TimeoutError:
+                        self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+        finally:
+            self.stop_process()
+            if self.sock is not None:
+                self.sock.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--worker-id", required=True)
+    parser.add_argument("--output", type=Path, default=Path("worker-output"))
+    parser.add_argument("--demo-seconds", type=float, default=3)
+    parser.add_argument("--demo-exit-code", type=int, default=0)
+    parser.add_argument("--task-timeout", type=float, default=30)
+    args = parser.parse_args()
+    if (not 1 <= args.port <= 65535 or not 1 <= len(args.worker_id.encode()) <= 256
+            or not math.isfinite(args.demo_seconds) or args.demo_seconds < 0
+            or not math.isfinite(args.task_timeout) or args.task_timeout <= 0
+            or not 0 <= args.demo_exit_code <= 255):
+        parser.error("invalid port, worker identity, duration or exit code")
+    def terminate(signum, frame):
+        raise KeyboardInterrupt()
+    signal.signal(signal.SIGTERM, terminate)
+    try:
+        Worker(args).run()
+    except KeyboardInterrupt:
+        return 0
+    except (OSError, ValueError, RuntimeError) as error:
+        print("[WORKER] " + str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
