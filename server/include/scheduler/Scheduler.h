@@ -28,7 +28,8 @@ public:
 
     bool submitTask(Task task);
     std::vector<TaskAssignment> schedule();
-    bool completeTask(TaskId task_id, TaskStatus final_status);
+    bool completeTask(TaskId task_id, TaskStatus final_status,
+                      nlohmann::json execution_summary = nullptr);
     bool cancelTask(TaskId task_id);
 
     bool markTaskStarted(TaskId task_id, const WorkerId& worker_id);

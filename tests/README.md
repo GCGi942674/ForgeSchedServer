@@ -22,7 +22,7 @@ make test BUILD_TYPE=Debug
 ```
 
 JSON is supplied by `third_party/nlohmann/json.hpp`. Build directories can be
-removed and regenerated. Python 3.8+ is required for the Worker integration test.
+removed and regenerated. Python 3.6+ is required for the Worker integration test.
 Tests remain in tests/, with no separate verification directory.
 
 The new test_python_worker covers successful and failed exits, timeout, queued

@@ -123,7 +123,8 @@ std::optional<bool> Scheduler::dispatchAssignment(
 }
 
 
-bool Scheduler::completeTask(TaskId task_id, TaskStatus final_status) {
+bool Scheduler::completeTask(TaskId task_id, TaskStatus final_status,
+                             nlohmann::json execution_summary) {
     if (!isValidFinalStatus(final_status)) {
         LOG_WARN(LogModule::SCHEDULER, "Invalid completion status: " + toString(final_status));
         return false;
@@ -149,10 +150,12 @@ bool Scheduler::completeTask(TaskId task_id, TaskStatus final_status) {
         return false;
     }
 
-    if (!task.transitionTo(final_status)) {
+    if (!task.canTransitionTo(final_status)) {
         LOG_ERROR(LogModule::SCHEDULER, "Task transition RUNNING -> " + toString(final_status) + " failed for task=" + std::to_string(task_id));
         return false;
     }
+    task.setExecutionSummary(execution_summary);
+    task.transitionTo(final_status);
 
     if (!worker_manager_.releaseSlot(task.getWorkerId())) {
         LOG_ERROR(LogModule::SCHEDULER, "Worker slot release failed after task completion for task=" + std::to_string(task_id));

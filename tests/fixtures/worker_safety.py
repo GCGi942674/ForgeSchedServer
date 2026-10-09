@@ -17,6 +17,7 @@ sys.path.insert(0, str(REPO / "worker"))
 from pjtest_adapter import PJtestAdapter, AdapterError, tree_digest, file_digest
 from process_executor import ProcessExecutor, ExecutionContainmentError
 from forge_worker import Worker
+from runtime_config import load_config
 
 
 def wait_for(predicate, seconds=8):
@@ -36,6 +37,25 @@ def gone(pid):
 
 
 class Safety(unittest.TestCase):
+    def test_shared_config_and_adapter_path_override(self):
+        with tempfile.TemporaryDirectory(prefix="forge-config-") as directory:
+            path = Path(directory) / "forgesched.conf"
+            path.write_text("# comment\nnetwork.server_ip=10.0.0.7\nserver.port=12345\n"
+                            "worker.output_dir=/tmp/worker-runs\n", encoding="utf-8")
+            previous = os.environ.get("FORGESCHED_CONFIG")
+            os.environ["FORGESCHED_CONFIG"] = str(path)
+            try:
+                values = load_config()
+                self.assertEqual(values["network.server_ip"], "10.0.0.7")
+                self.assertEqual(values["server.port"], "12345")
+                path.write_text("server.port=1\nserver.port=2\n", encoding="utf-8")
+                self.assertEqual(load_config()["server.port"], "2")
+            finally:
+                if previous is None:
+                    os.environ.pop("FORGESCHED_CONFIG", None)
+                else:
+                    os.environ["FORGESCHED_CONFIG"] = previous
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="forge-safety-")
         self.root = Path(self.tmp.name)
@@ -58,6 +78,12 @@ class Safety(unittest.TestCase):
 
     def adapter(self, name="one"):
         return PJtestAdapter(self.config, name, lambda: None)
+
+    def test_configured_log_directory_overrides_local_profile(self):
+        logs = self.root / "central-logs"
+        adapter = PJtestAdapter(self.config, "central", lambda: None,
+                                {"log_root": str(logs)})
+        self.assertEqual(adapter.log_root, logs.resolve())
 
     def run_adapter(self, adapter=None, name="result"):
         return (adapter or self.adapter()).execute(self.task, self.root / name)
@@ -161,7 +187,8 @@ class Safety(unittest.TestCase):
 
     def test_worker_requires_explicit_mode(self):
         result = subprocess.run([sys.executable, "-B", str(REPO / "worker/forge_worker.py"),
-                                 "--worker-id", "no-mode"], capture_output=True)
+                                 "--worker-id", "no-mode"], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
         self.assertEqual(result.returncode, 2)
 
     def test_result_symlink_and_size(self):

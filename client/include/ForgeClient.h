@@ -8,7 +8,7 @@ namespace ForgeSched {
 // Numeric IPv4 only; timeout covers connect, complete send and complete response.
 class ForgeClient {
 public:
-    ForgeClient(std::string host = "127.0.0.1", uint16_t port = 8080, int timeout_ms = 5000);
+    ForgeClient(std::string host, uint16_t port, int timeout_ms = 5000);
     Protocol::ProtocolMessage request(Protocol::MessageType, const nlohmann::json&);
     Protocol::ProtocolMessage submit(const std::string& target, const std::string& revision, int priority = 0);
     Protocol::ProtocolMessage query(uint64_t task_id);

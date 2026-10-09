@@ -35,27 +35,37 @@ ForgeSched::LogLevel parseLogLevel(const std::string& level_str) {
     return ForgeSched::LogLevel::INFO;
 }
 
-int main() {
+int main(int argc, char** argv) {
   // Step 1: Load Config
-  bool config_loaded = ForgeSched::Config::instance().load("config/forgesched.conf");
+  if (argc > 2 || (argc == 2 && std::string(argv[1]) != "--help")) {
+    std::cerr << "Usage: forgesched_server [--help]\n";
+    return 1;
+  }
+  if (argc == 2) {
+    std::cout << "Set FORGESCHED_CONFIG to the shared config file path.\n";
+    return 0;
+  }
+  bool config_loaded = ForgeSched::Config::instance().loadDefault();
   if (!config_loaded) {
-      std::cerr << "[SERVER] Warning: Failed to load config file, using defaults" << std::endl;
+      std::cerr << "[SERVER] Missing config; set FORGESCHED_CONFIG" << std::endl;
+      return 1;
   }
 
   // Step 2: Configure Logger
   std::string log_level_str = ForgeSched::Config::instance().getString("log.level", "INFO");
-  std::string log_dir = ForgeSched::Config::instance().getString("log.dir", "./logs");
+  std::string log_dir = ForgeSched::Config::instance().getString("log.dir", "");
 
   ForgeSched::LogLevel log_level = parseLogLevel(log_level_str);
   ForgeSched::Logger::instance().setLogDirectory(log_dir);
   ForgeSched::Logger::instance().setLevel(log_level);
 
   // Step 3: Read server settings
-  int port = ForgeSched::Config::instance().getInt("server.port", 8080);
+  int port = ForgeSched::Config::instance().getInt("server.port", 0);
   int worker_threads = ForgeSched::Config::instance().getInt("server.worker_threads", 8);
   int io_threads = ForgeSched::Config::instance().getInt("server.io_threads", 2);
+  const std::string bind_ip = ForgeSched::Config::instance().getString("server.bind_ip", "");
   if (port < 1 || port > 65535 || worker_threads < 1 || worker_threads > 256 ||
-      io_threads < 1 || io_threads > 256) {
+      io_threads < 1 || io_threads > 256 || log_dir.empty() || bind_ip.empty()) {
     std::cerr << "[SERVER] Invalid port or thread count" << std::endl;
     return 1;
   }
@@ -78,7 +88,7 @@ int main() {
   // Step 4: Start server with configured settings
   EchoHandler handler;
   ForgeSched::WorkerServer worker_server;
-  EchoServer server(port, handler, g_signal_fd, io_threads, worker_threads);
+  EchoServer server(port, handler, g_signal_fd, io_threads, worker_threads, bind_ip);
   worker_server.attach(server);
 
   bool ran = server.run();

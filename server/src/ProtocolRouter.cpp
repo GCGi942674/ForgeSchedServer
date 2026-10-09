@@ -8,6 +8,42 @@
 #include "Logging.h"
 #include <chrono>
 
+namespace {
+nlohmann::json executionSummary(const std::string& message, ForgeSched::TaskStatus status) noexcept {
+    if (message.empty() || message.size() > 8192) return nullptr;
+    try {
+        const auto source = nlohmann::json::parse(message, nullptr, false);
+        if (!source.is_object()) return nullptr;
+        const auto status_it = source.find("status");
+        if (status_it != source.end() &&
+            (!status_it->is_string() || status_it->get<std::string>() != ForgeSched::toString(status)))
+            return nullptr;
+        nlohmann::json summary = nlohmann::json::object();
+        for (const char* key : {"reason", "case_status", "case_reason"}) {
+            const auto item = source.find(key);
+            if (item != source.end() && item->is_string()) {
+                const auto value = item->get<std::string>();
+                if (value.size() <= 256) summary[key] = value;
+            }
+        }
+        for (const char* key : {"case_ret_code", "raw_exit_code", "exit_code", "pid"}) {
+            const auto item = source.find(key);
+            if (item == source.end()) continue;
+            if (item->is_number_unsigned()) {
+                const auto value = item->get<uint64_t>();
+                if (value <= 1000000000) summary[key] = value;
+            } else if (item->is_number_integer()) {
+                const auto value = item->get<int64_t>();
+                if (value >= -1000000000 && value <= 1000000000) summary[key] = value;
+            }
+        }
+        return summary.empty() ? nlohmann::json(nullptr) : summary;
+    } catch (...) {
+        return nullptr;
+    }
+}
+}
+
 namespace ForgeSched::Protocol {
 
 ProtocolRouter::ProtocolRouter(
@@ -187,7 +223,8 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "worker_id mismatch");
             }
 
-            bool success = scheduler_.completeTask(result_req.task_id, result_req.status);
+            auto summary = executionSummary(result_req.message, result_req.status);
+            bool success = scheduler_.completeTask(result_req.task_id, result_req.status, std::move(summary));
             if (!success) {
                 return buildResponse(request, ResponseCode::INTERNAL_ERROR, "failed to complete task");
             }
@@ -232,6 +269,7 @@ nlohmann::json ProtocolRouter::taskToJson(const Task& task) const {
     j["worker_id"] = task.getWorkerId();
     j["priority"] = task.getPriority();
     j["payload"] = task.getPayload();
+    if (!task.getExecutionSummary().is_null()) j["execution"] = task.getExecutionSummary();
     j["retry_count"] = task.getRetryCount();
 
     auto created = task.getCreatedAt();

@@ -20,7 +20,8 @@ int main(int argc, char** argv) { return testMain([&] {
     std::filesystem::create_directory(std::string(path)+"/config");
     auto configure = [&](int port) {
         std::ofstream out(std::string(path)+"/config/forgesched.conf"); CHECK(out.good());
-        out << "server.port=" << port << "\nserver.io_threads=2\nserver.worker_threads=2\nlog.level=WARN\nlog.dir=./logs\n";
+        out << "server.bind_ip=127.0.0.1\nserver.port=" << port
+            << "\nserver.io_threads=2\nserver.worker_threads=2\nlog.level=WARN\nlog.dir=./logs\n";
     };
     auto launch = [&](Child& child) {
         child.pid = ::fork(); CHECK(child.pid >= 0);

@@ -12,13 +12,17 @@ make
 ./build/bin/server
 ```
 
-服务读取当前目录下的 `config/forgesched.conf`，默认端口 8080。
+服务、CLI 和 Worker 读取同一格式的 `config/forgesched.conf`；
+可用 `FORGESCHED_CONFIG=/absolute/path/forgesched.conf` 显式指定。
+连接地址由 `network.server_ip` 指定，监听地址由 `server.bind_ip` 指定，
+端口统一使用 `server.port`。缺少配置时启动失败；多机部署需在各机器上
+配置可达的服务地址。
 在另一终端运行：
 
 ```sh
-./build/bin/forgesched_client --host 127.0.0.1 --port 8080 submit --target demo --revision r1 --priority 0
-./build/bin/forgesched_client --host 127.0.0.1 --port 8080 query 1
-./build/bin/forgesched_client --host 127.0.0.1 --port 8080 cancel 1
+./build/bin/forgesched_client submit --target demo --revision r1 --priority 0
+./build/bin/forgesched_client query 1
+./build/bin/forgesched_client cancel 1
 ```
 
 上面的 1 必须替换为 submit 返回的 `result.task_id`。没有 Worker 在线时任务保持
@@ -27,9 +31,9 @@ Echo 基础设施测试工具，不是调度客户端。
 
 CLI 选项：
 
-- `--host`：数字 IPv4 地址，默认 127.0.0.1；暂不支持 DNS/IPv6。
-- `--port`：1..65535，默认 8080。
-- `--timeout-ms`：1..60000，默认 5000；覆盖连接、完整发送和完整响应读取，
+- `--host`：临时覆盖配置中的数字 IPv4 地址；暂不支持 DNS/IPv6。
+- `--port`：临时覆盖配置中的端口（1..65535）。
+- `--timeout-ms`：临时覆盖配置中的超时（1..60000）；覆盖连接、完整发送和完整响应读取，
   收到少量数据不会重置截止时间。
 - submit 需要 `--target` 和 `--revision`，任务类型固定 REGRESSION；
   `--priority` 范围 -100..100，默认 0。

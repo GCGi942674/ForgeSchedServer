@@ -61,8 +61,10 @@ def file_digest(path):
 
 
 class PJtestAdapter:
-    def __init__(self, config_file, worker_id, heartbeat):
+    def __init__(self, config_file, worker_id, heartbeat, path_overrides=None):
         config = json.loads(Path(config_file).read_text(encoding="utf-8"))
+        if path_overrides:
+            config.update(path_overrides)
         self.work_root = Path(config["test2_root"]).expanduser().resolve(strict=True)
         self.artifacts = Path(config["artifact_root"]).expanduser().resolve(strict=True)
         self.log_root = Path(config["log_root"]).expanduser().resolve()

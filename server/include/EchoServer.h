@@ -19,7 +19,8 @@
 class EchoServer {
 public:
   EchoServer(int port, EchoHandler &handler, int signal_fd,
-             size_t io_thread_num, size_t worker_thread_num = 8);
+             size_t io_thread_num, size_t worker_thread_num = 8,
+             std::string bind_ip = "0.0.0.0");
   ~EchoServer();
   bool run();
   void beginShutdown();

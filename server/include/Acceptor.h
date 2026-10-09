@@ -3,13 +3,14 @@
 
 #include "EventLoop.h"
 #include <functional>
+#include <string>
 
 class Acceptor {
 public:
   using ServerCallback = std::function<void(int)>;
 
 public:
-  Acceptor(EventLoop *loop, int port);
+  Acceptor(EventLoop *loop, int port, std::string bind_ip = "0.0.0.0");
   ~Acceptor();
 
   bool startListen();
@@ -21,6 +22,7 @@ public:
 private:
   int listen_fd_;
   int port_;
+  std::string bind_ip_;
   EventLoop *loop_;
   ServerCallback callback_;
 };

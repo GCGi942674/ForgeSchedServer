@@ -6,12 +6,30 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <filesystem>
 
 namespace ForgeSched {
 
 Config& Config::instance() {
     static Config instance;
     return instance;
+}
+
+bool Config::loadDefault() {
+    if (const char* path = std::getenv("FORGESCHED_CONFIG"))
+        return *path && load(path);
+    std::error_code error;
+    auto directory = std::filesystem::current_path(error);
+    if (error) return false;
+    while (true) {
+        const auto candidate = directory / "config" / "forgesched.conf";
+        if (std::filesystem::is_regular_file(candidate, error))
+            return load(candidate.string());
+        if (directory == directory.root_path()) break;
+        directory = directory.parent_path();
+    }
+    return false;
 }
 
 bool Config::load(const std::string& filename) {
@@ -22,6 +40,7 @@ bool Config::load(const std::string& filename) {
         return false;
     }
 
+    config_map_.clear();
     std::string line;
     int line_num = 0;
     while (std::getline(file, line)) {

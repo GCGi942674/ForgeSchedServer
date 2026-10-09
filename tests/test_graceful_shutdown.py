@@ -9,7 +9,10 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
+from runtime_config import load_config
 
 
 def wait_for_port(host: str, port: int, timeout: float) -> bool:
@@ -33,7 +36,7 @@ def try_connect(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
-def read_stream(prefix: str, stream, sink: list[str]):
+def read_stream(prefix: str, stream, sink: List[str]):
     """Read subprocess output in a background thread."""
     for line in iter(stream.readline, ""):
         text = line.rstrip("\n")
@@ -60,18 +63,26 @@ def recv_until_closed(sock: socket.socket, label: str, result: dict):
 
 
 def main():
+    try:
+        config = load_config()
+        config_host = config["network.server_ip"]
+        config_port = int(config["server.port"])
+        server_binary = config["tools.server_binary"]
+    except (OSError, ValueError, KeyError) as error:
+        print("[FAIL] invalid shared config: {}".format(error), file=sys.stderr)
+        return 2
     parser = argparse.ArgumentParser(description="Test graceful shutdown for your C++ server.")
-    parser.add_argument("--server", default="./build/bin/server", help="Path to server binary")
-    parser.add_argument("--host", default="127.0.0.1", help="Server host")
-    parser.add_argument("--port", type=int, default=8080, help="Server port")
+    parser.add_argument("--server", default=server_binary, help="Path to server binary")
+    parser.add_argument("--host", default=config_host, help="Server host")
+    parser.add_argument("--port", type=int, default=config_port, help="Server port")
     parser.add_argument("--startup-timeout", type=float, default=5.0, help="Wait time for server startup")
     parser.add_argument("--shutdown-timeout", type=float, default=5.0, help="Wait time for server exit")
     parser.add_argument("--no-spawn", action="store_true", help="Do not spawn server, test an already running one")
     args = parser.parse_args()
 
     server_proc: Optional[subprocess.Popen] = None
-    stdout_lines: list[str] = []
-    stderr_lines: list[str] = []
+    stdout_lines: List[str] = []
+    stderr_lines: List[str] = []
 
     try:
         if not args.no_spawn:
@@ -84,7 +95,7 @@ def main():
                 [args.server],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                universal_newlines=True,
                 bufsize=1,
             )
 

@@ -15,6 +15,7 @@ import tempfile
 import time
 from process_executor import ProcessExecutor
 from pjtest_adapter import PJtestAdapter
+from runtime_config import load_config
 
 MAX_FRAME = 1024 * 1024
 
@@ -29,9 +30,10 @@ class Worker:
         self.process = None
         self.executor = ProcessExecutor(
             lambda: self.request("worker_heartbeat", dict(worker_id=self.args.worker_id)))
-        self.adapter = (PJtestAdapter(args.pjtest_config, args.worker_id, self.executor.heartbeat)
+        self.adapter = (PJtestAdapter(args.pjtest_config, args.worker_id, self.executor.heartbeat,
+                                     args.pjtest_paths)
                         if args.pjtest_config else None)
-        if self.adapter and args.output == Path("worker-output"):
+        if self.adapter and not args.pjtest_paths.get("log_root"):
             args.output = self.adapter.log_root
 
     def receive(self, deadline):
@@ -153,10 +155,10 @@ class Worker:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--host", help="override network.server_ip")
+    parser.add_argument("--port", type=int, help="override server.port")
     parser.add_argument("--worker-id", required=True)
-    parser.add_argument("--output", type=Path, default=Path("worker-output"))
+    parser.add_argument("--output", type=Path, help="override worker.output_dir")
     parser.add_argument("--demo-seconds", type=float, default=3)
     parser.add_argument("--demo-exit-code", type=int, default=0)
     parser.add_argument("--task-timeout", type=float, default=30)
@@ -164,6 +166,24 @@ def main():
                         help="enable single-case PJtest mode using this local JSON config")
     parser.add_argument("--demo", action="store_true", help="explicitly enable non-business demo mode")
     args = parser.parse_args()
+    try:
+        config = load_config()
+        explicit_config = args.pjtest_config is not None
+        explicit_output = args.output is not None
+        args.host = args.host or config["network.server_ip"]
+        args.port = args.port if args.port is not None else int(config["server.port"])
+        args.output = args.output or Path(config["worker.output_dir"])
+        args.pjtest_config = args.pjtest_config or (
+            Path(config["worker.pjtest_config"]) if config.get("worker.pjtest_config") else None)
+        args.pjtest_paths = {}
+        if config.get("worker.test2_root"):
+            args.pjtest_paths["test2_root"] = config["worker.test2_root"]
+        if config.get("worker.artifact_root"):
+            args.pjtest_paths["artifact_root"] = config["worker.artifact_root"]
+        if explicit_output or not explicit_config:
+            args.pjtest_paths["log_root"] = str(args.output)
+    except (OSError, ValueError, KeyError) as error:
+        parser.error("invalid shared config: " + str(error))
     if bool(args.pjtest_config) == args.demo:
         parser.error("choose exactly one of --pjtest-config or --demo")
     if (not 1 <= args.port <= 65535 or not 1 <= len(args.worker_id.encode()) <= 256

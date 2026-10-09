@@ -13,8 +13,8 @@
 using namespace ForgeSched;
 
 EchoServer::EchoServer(int port, EchoHandler &handler, int signal_fd,
-                       size_t io_thread_num, size_t worker_thread_num)
-    : handler_(handler), loop_(), acceptor_(&loop_, port),
+                       size_t io_thread_num, size_t worker_thread_num, std::string bind_ip)
+    : handler_(handler), loop_(), acceptor_(&loop_, port, std::move(bind_ip)),
       io_loop_pool_(std::make_unique<EventLoopThreadPool>(io_thread_num)),
       io_thread_num_(io_thread_num), pool_(worker_thread_num), signal_fd(signal_fd) {
   std::ostringstream oss;

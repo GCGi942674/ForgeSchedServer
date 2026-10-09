@@ -1,4 +1,5 @@
 #include "ForgeClient.h"
+#include "config/Config.h"
 #include <arpa/inet.h>
 #include <charconv>
 #include <iostream>
@@ -16,7 +17,8 @@ template<class T> T number(const std::string& text) {
     return result;
 }
 void usage() {
-    std::cout << "Usage: forgesched_client [--host IPv4] [--port 8080] [--timeout-ms 5000]\n"
+    std::cout << "Usage: forgesched_client [--host IPv4] [--port PORT] [--timeout-ms MS]\n"
+              << "Defaults come from FORGESCHED_CONFIG or config/forgesched.conf.\n"
               << "  submit --target TARGET --revision REV [--priority -100..100]\n"
               << "         [--case PATH/run.tcl --flow PROFILE --case-timeout SEC]\n"
               << "  query TASK_ID\n  cancel TASK_ID\n"
@@ -26,8 +28,13 @@ void usage() {
 }
 int main(int argc, char** argv) {
     try {
-        std::string host = "127.0.0.1", command, target, revision, id, case_path, flow;
-        int port = 8080, timeout = 5000, priority = 0, case_timeout = 0;
+        if (!Config::instance().loadDefault())
+            throw UsageError("missing config; set FORGESCHED_CONFIG");
+        std::string host = Config::instance().getString("network.server_ip", "");
+        std::string command, target, revision, id, case_path, flow;
+        int port = Config::instance().getInt("server.port", 0);
+        int timeout = Config::instance().getInt("network.timeout_ms", 0);
+        int priority = 0, case_timeout = 0;
         std::set<std::string> seen;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];

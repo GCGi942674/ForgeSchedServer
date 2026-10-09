@@ -73,6 +73,9 @@ int main(int argc, char** argv) { return testMain([&] {
         auto query = invoke({cli, "--port", port, "query", std::to_string(id)});
         CHECK(query["result"]["payload"]["case"] == std::string("cases/")+mode+"/run.tcl");
         CHECK(query["result"]["status"] == final);
+        if (std::string(mode) == "missing_artifact")
+            CHECK(query["result"]["execution"]["reason"].get<std::string>().find(
+                "artifact not found") != std::string::npos);
         // Each run records a local result before the Worker sends TASK_RESULT.
         bool found = false;
         for (const auto& entry : std::filesystem::directory_iterator(std::string(path)+"/output")) {

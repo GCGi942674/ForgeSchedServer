@@ -11,6 +11,7 @@ public:
     static Config& instance();
 
     bool load(const std::string& filename);
+    bool loadDefault();
 
     std::string getString(const std::string& key, const std::string& default_value) const;
     int getInt(const std::string& key, int default_value) const;

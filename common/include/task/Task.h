@@ -23,6 +23,7 @@ public:
         const std::string& getTarget() const { return target_; }
     const std::string& getRevision() const { return revision_; }
     const nlohmann::json& getPayload() const { return payload_; }
+    const nlohmann::json& getExecutionSummary() const { return execution_summary_; }
     const std::string& getWorkerId() const { return worker_id_; }
 
     int getPriority() const { return priority_; }
@@ -39,6 +40,7 @@ public:
     void clearWorkerId() { worker_id_.clear(); }
     void setPriority(int priority) { priority_ = priority; }
     void setPayload(nlohmann::json payload) { payload_ = std::move(payload); }
+    void setExecutionSummary(nlohmann::json& summary) noexcept { execution_summary_.swap(summary); }
     void incrementRetryCount() { retry_count_++; }
 
     Task(const Task&) = default;
@@ -54,6 +56,7 @@ private:
     std::string target_;
     std::string revision_;
     nlohmann::json payload_ = nlohmann::json::object();
+    nlohmann::json execution_summary_ = nullptr;
     std::string worker_id_;
 
     int priority_;

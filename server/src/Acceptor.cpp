@@ -11,8 +11,8 @@
 
 using namespace ForgeSched;
 
-Acceptor::Acceptor(EventLoop *loop, int port)
-    : loop_(loop), port_(port), listen_fd_(-1) {}
+Acceptor::Acceptor(EventLoop *loop, int port, std::string bind_ip)
+    : loop_(loop), port_(port), bind_ip_(std::move(bind_ip)), listen_fd_(-1) {}
 
 Acceptor::~Acceptor() {
   if (listen_fd_ != -1) {
@@ -39,7 +39,12 @@ bool Acceptor::startListen() {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(this->port_);
-  addr.sin_addr.s_addr = INADDR_ANY;
+  if (::inet_pton(AF_INET, bind_ip_.c_str(), &addr.sin_addr) != 1) {
+    LOG_ERROR(LogModule::NETWORK, "invalid configured bind IP");
+    close(this->listen_fd_);
+    this->listen_fd_ = -1;
+    return false;
+  }
 
   if (bind(this->listen_fd_, (sockaddr *)&addr, sizeof(addr)) < 0) {
     std::ostringstream oss;

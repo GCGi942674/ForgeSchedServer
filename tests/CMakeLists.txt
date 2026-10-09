@@ -39,7 +39,7 @@ target_link_libraries(test_client_transport PRIVATE forgesched_client_api)
 add_test(NAME test_client_transport COMMAND test_client_transport)
 set_tests_properties(test_client_transport PROPERTIES TIMEOUT 45)
 
-find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+find_package(Python3 3.6 REQUIRED COMPONENTS Interpreter)
 add_executable(test_python_worker test_python_worker.cpp)
 target_link_libraries(test_python_worker PRIVATE forgesched_server_core forgesched_client_api)
 add_test(NAME test_python_worker COMMAND test_python_worker ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/worker/forge_worker.py)

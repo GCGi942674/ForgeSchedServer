@@ -63,9 +63,13 @@ int main() { return testMain([] {
     CHECK(api.cancel(id).data["code"] == 3);
     CHECK(api.query(id).data["result"]["status"] == "RUNNING");
     CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 1);
-    auto finish = envelope("task_result", {{"task_id", id}, {"worker_id", "w"}, {"status", "SUCCEEDED"}});
+    auto finish = envelope("task_result", {{"task_id", id}, {"worker_id", "w"},
+        {"status", "SUCCEEDED"}, {"message", R"({"status":"SUCCEEDED","reason":"pass","exit_code":0,"pid":123,"secret":"do-not-expose"})"}});
     response(worker.value, finish, true);
     CHECK(api.query(id).data["result"]["status"] == "SUCCEEDED");
+    CHECK(api.query(id).data["result"]["execution"]["reason"] == "pass");
+    CHECK(api.query(id).data["result"]["execution"]["exit_code"] == 0);
+    CHECK(!api.query(id).data["result"]["execution"].contains("secret"));
     // Multiple requests in one write preserve framing and request correlation.
     auto first = MessageCodec::encode(envelope("query_task", {{"task_id", id}}, 101).dump());
     auto second = MessageCodec::encode(envelope("query_task", {{"task_id", id}}, 102).dump());
@@ -77,6 +81,7 @@ int main() { return testMain([] {
         CHECK(query["data"]["result"]["status"] == "SUCCEEDED");
     }
     response(worker.value, finish, false);
+    CHECK(api.query(id).data["result"]["execution"]["reason"] == "pass");
     CHECK(api.cancel(id).data["code"] == 3);
     CHECK(api.query(999999).data["code"] == 2);
     CHECK(api.cancel(999999).data["code"] == 2);
@@ -89,7 +94,11 @@ int main() { return testMain([] {
     CHECK(api.query(queued).data["result"]["status"] == "CANCELLED");
     CHECK(api.cancel(queued).data["code"] == 3);
     response(worker.value, envelope("task_start", {{"task_id", active}, {"worker_id", "w"}}), true);
-    response(worker.value, envelope("task_result", {{"task_id", active}, {"worker_id", "w"}, {"status", "FAILED"}}), true);
+    response(worker.value, envelope("task_result", {{"task_id", active}, {"worker_id", "w"},
+        {"status", "FAILED"}, {"message", std::string(9000, 'x')}}), true);
+    CHECK(api.query(active).data["result"]["status"] == "FAILED");
+    CHECK(!api.query(active).data["result"].contains("execution"));
+    CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 0);
     worker.reset();
     eventually([&] { return !host.worker.getWorkerConnectionRegistry().hasConnection("w"); });
     // Size rejection precedes task creation; accepted metadata survives worst-case escaping.

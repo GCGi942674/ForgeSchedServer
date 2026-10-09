@@ -5,10 +5,18 @@
 
 ## 启动配置
 
-生产模式必须指定 --pjtest-config。演示必须显式 --demo，且拒绝业务 payload。
+生产模式需在共享配置中设置 `worker.pjtest_config`，或显式传入
+`--pjtest-config`；演示必须显式 `--demo`，且拒绝业务 payload。
+Server、CLI、Worker 共用 `config/forgesched.conf`。多机部署时可用
+`FORGESCHED_CONFIG` 指向每台机器自己的配置副本：
+`server.bind_ip` 是监听地址，`network.server_ip` 是 Client/Worker 连接地址，
+`server.port` 为同一个端口。默认只监听本机；不要在无认证/TLS 的情况下开放公网。
+Worker 的 `worker.output_dir`、`worker.test2_root`、
+`worker.artifact_root` 和 `worker.pjtest_config` 路径在该配置中集中指定；
+相对路径均相对于进程启动目录。
 
 ```sh
-python3 worker/forge_worker.py --worker-id pjtest-slot-1 --pjtest-config /local/worker.json
+python3 worker/forge_worker.py --worker-id pjtest-slot-1
 ./build/bin/forgesched_client submit --target xcvu9p --revision 58231 --case cases/smoke/run.tcl --flow route --case-timeout 600
 ```
 
@@ -29,8 +37,9 @@ python3 worker/forge_worker.py --worker-id pjtest-slot-1 --pjtest-config /local/
 }
 ```
 
-路径、环境与 flow 需由内网操作员核验。不会自动 source .cshrc。
-log_root 是默认输出位置，--output 可覆盖。旧 lock_root 不再控制保护范围：
+配置中的路径优先于本地 JSON 的同名目录字段；后者保留供直接调用 Adapter 的
+离线测试使用。路径、环境与 flow 需由内网操作员核验。不会自动 source .cshrc。
+`--output` 可临时覆盖 Worker 输出目录。旧 lock_root 不再控制保护范围：
 对规范化输入目录本身加内核 flock，锁与 Worker 名称无关。
 target 当前是业务标签，不隐式改变 case/器件/flow。
 

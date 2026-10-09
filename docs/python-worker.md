@@ -1,10 +1,11 @@
 # Python Worker：真实进程最小闭环
 
-这是 Linux / WSL 的单 slot 演示执行器，Python 3.8+，仅依赖标准库。
-它不是 PJtest/Vivado Adapter，不用于生产任务。
+这是 Linux / WSL 的单 slot 演示执行器，Python 3.6+，仅依赖标准库。
+同一个 Worker 也可通过 `--pjtest-config` 或共享配置中的
+`worker.pjtest_config` 进入 PJtest 模式；演示模式必须显式选择。
 
 ```bash
-python3 worker/forge_worker.py --worker-id demo-1 --output /tmp/forge-worker-output
+python3 worker/forge_worker.py --worker-id demo-1 --demo
 build/bin/forgesched_client submit --target demo --revision r1
 build/bin/forgesched_client query TASK_ID
 ```
@@ -13,9 +14,11 @@ build/bin/forgesched_client query TASK_ID
 `--demo-seconds`、`--demo-exit-code`、`--task-timeout`
 用于验证成功、失败和超时。服务端 target/revision 不作为命令执行。
 
+Worker 从 `config/forgesched.conf` 读取连接地址、端口和输出目录；
+可用 `FORGESCHED_CONFIG` 指定部署配置，或通过显式参数临时覆盖。
 每次 Worker 启动创建独立 run-* 目录，每个任务保存 pid、stdout.log、
-stderr.log、result.json。退出码和 PID 保存在本地；当前 Server 查询只提供
-任务状态，不保存 TASK_RESULT.message 中的执行详情。
+stderr.log、result.json。Server 查询提供任务状态和受限的执行摘要，
+完整日志和结果文件仍留在 Worker 本地。
 
 先等待 TASK_START 成功再启动进程；运行期间发送心跳；超时杀死进程组并回收；
 SIGINT/SIGTERM 或连接错误同样清理子进程。结果响应和下一次派发允许交错。
