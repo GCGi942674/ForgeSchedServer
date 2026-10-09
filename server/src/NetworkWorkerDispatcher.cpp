@@ -33,6 +33,7 @@ Protocol::ProtocolMessage NetworkWorkerDispatcher::buildTaskAssignMessage(const 
     assign_dto.target = task.getTarget();
     assign_dto.revision = task.getRevision();
     assign_dto.priority = task.getPriority();
+    assign_dto.payload = task.getPayload();
 
     message.data = Protocol::DTO::toJson(assign_dto);
     return message;

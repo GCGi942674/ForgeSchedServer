@@ -6,6 +6,7 @@ Development and tests run in WSL; the internal deployment consumes this code.
 - [Control plane, CLI usage and protocol boundaries](docs/control-plane-v0.1.md)
 - [Build instructions and regression coverage](tests/README.md)
 - [PJtest integration review and remaining work](docs/pjtest-integration-phase6.md)
+- [PJtest Adapter configuration and offline acceptance](docs/pjtest-adapter.md)
 
 Build with `make`; run `./build/bin/server` from the repository root.
 Use `./build/bin/forgesched_client --help` for submit/query/cancel commands.

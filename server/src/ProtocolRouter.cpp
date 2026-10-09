@@ -55,6 +55,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             create_req.target = submit_req.target;
             create_req.revision = submit_req.revision;
             create_req.priority = submit_req.priority;
+            create_req.payload = submit_req.payload;
 
             auto result = task_service_.createTask(create_req);
             if (!result) {
@@ -230,6 +231,7 @@ nlohmann::json ProtocolRouter::taskToJson(const Task& task) const {
     j["revision"] = task.getRevision();
     j["worker_id"] = task.getWorkerId();
     j["priority"] = task.getPriority();
+    j["payload"] = task.getPayload();
     j["retry_count"] = task.getRetryCount();
 
     auto created = task.getCreatedAt();

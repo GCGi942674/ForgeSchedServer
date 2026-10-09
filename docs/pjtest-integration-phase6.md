@@ -1,5 +1,7 @@
 # Phase 6 — PJtest 接入审查与待实现契约
 
+本文件保留接入前审查记录；已实现的离线适配与当前配置见 [pjtest-adapter.md](pjtest-adapter.md)。
+
 ## 当前结论
 
 基线 2411a88 已提交并推送。通用进程 Worker 不等于 PJtest Worker。
@@ -106,5 +108,5 @@ build_task_command 支持 cmd，但正常 prepare_task_for_slot 会重新生成 
 真实环境提供后：CLI → Server → Adapter → run.sh → 新 result.env → TASK_RESULT →
 CLI 最终状态，并留存命令 argv、环境摘要、版本标识、PID、日志、原始退出码与结果。
 
-当前只完成基线提交推送、接入审查、取消安全限制；payload/Adapter 执行入口及上述
-业务测试仍是下一步，不上 SQLite/缓存/恢复，不把固定命令测试算真实 Regression。
+此处为实施前的风险清单。当前 payload、Adapter 与假环境网络闭环已有实现；
+真实 GalaxCore/Vivado 仍需内网验收，SQLite/缓存/恢复仍未加入。

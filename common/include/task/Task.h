@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
+#include "nlohmann/json.hpp"
 
 namespace ForgeSched {
 
@@ -21,6 +22,7 @@ public:
 
         const std::string& getTarget() const { return target_; }
     const std::string& getRevision() const { return revision_; }
+    const nlohmann::json& getPayload() const { return payload_; }
     const std::string& getWorkerId() const { return worker_id_; }
 
     int getPriority() const { return priority_; }
@@ -36,6 +38,7 @@ public:
     void setWorkerId(const std::string& worker_id) { worker_id_ = worker_id; }
     void clearWorkerId() { worker_id_.clear(); }
     void setPriority(int priority) { priority_ = priority; }
+    void setPayload(nlohmann::json payload) { payload_ = std::move(payload); }
     void incrementRetryCount() { retry_count_++; }
 
     Task(const Task&) = default;
@@ -50,6 +53,7 @@ private:
 
     std::string target_;
     std::string revision_;
+    nlohmann::json payload_ = nlohmann::json::object();
     std::string worker_id_;
 
     int priority_;

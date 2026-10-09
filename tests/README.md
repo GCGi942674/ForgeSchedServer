@@ -8,7 +8,8 @@ The current milestone includes the scheduling core, automatic scheduling driver,
 Worker network integration, and the v0.1 Client control plane with a C++ CLI.
 The Python demo Worker additionally runs real subprocesses (not PJtest/Vivado).
 No persistence, remote process cancellation or recovery is added.
-See [control-plane usage and protocol](../docs/control-plane-v0.1.md).
+See [control-plane usage and protocol](../docs/control-plane-v0.1.md)
+and [PJtest Adapter offline acceptance](../docs/pjtest-adapter.md).
 
 ## Run on Linux / WSL
 
@@ -88,6 +89,8 @@ Historical validation on 2026-09-23 with WSL Ubuntu / GCC 13.3:
 | test_scheduler_exception_safety | Persistent allocation-failure injection across schedule/coordinator, retry recovery, no-allocation rollback |
 | test_connection_limits | Immediate oversized-header rejection, byte/message budgets, maximum-size and fragmented frames |
 | test_control_plane | Role matrix, complete TCP Client/Mock Worker flow, query/cancel, framing, size limits and concurrent external submissions |
+| test_pjtest_adapter | CLI to TCP Server to Python Worker to fake run.sh/result.env, ten result paths, payload rejection, revision/flow mapping and pre/post clean |
+| test_worker_safety | 22 safety scenarios: private workspaces, manifests, cleanup quarantine, result ownership, detached descendants, Worker SIGKILL, startup shutdown and supervisor receipt; optional real runner with fake binary |
 | test_client_cli | Actual CLI process, arguments, exit codes, full Worker flow and refused connection |
 | test_client_transport | Correlation, response schema, malformed/oversized/truncated frames, overall deadline and slow response |
 

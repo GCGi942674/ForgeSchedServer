@@ -2,6 +2,7 @@
 #include "protocol/ProtocolError.h"
 #include "task/TaskType.h"
 #include "task/TaskStatus.h"
+#include "task/RegressionPayload.h"
 #include "logger/Logger.h"
 #include "logger/LogModule.h"
 #include <unordered_map>
@@ -68,7 +69,8 @@ bool fromJson(const nlohmann::json& j, SubmitTaskRequest& out) {
         out.priority = j["priority"].get<int>();
     }
 
-    return out.task_type != TaskType::UNKNOWN;
+    if (j.contains("payload")) out.payload = j["payload"];
+    return out.task_type != TaskType::UNKNOWN && validRegressionPayload(out.payload);
 }
 
 nlohmann::json toJson(const SubmitTaskRequest& value) {
@@ -77,6 +79,7 @@ nlohmann::json toJson(const SubmitTaskRequest& value) {
     j["target"] = value.target;
     j["revision"] = value.revision;
     j["priority"] = value.priority;
+    j["payload"] = value.payload;
     return j;
 }
 
@@ -224,7 +227,8 @@ bool fromJson(const nlohmann::json& j, TaskAssignRequest& out) {
         out.priority = j["priority"].get<int>();
     }
 
-    return true;
+    if (j.contains("payload")) out.payload = j["payload"];
+    return validRegressionPayload(out.payload);
 }
 
 nlohmann::json toJson(const TaskAssignRequest& value) {
@@ -234,6 +238,7 @@ nlohmann::json toJson(const TaskAssignRequest& value) {
     j["target"] = value.target;
     j["revision"] = value.revision;
     j["priority"] = value.priority;
+    j["payload"] = value.payload;
     return j;
 }
 

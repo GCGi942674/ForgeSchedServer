@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from process_executor import ProcessExecutor
+from pjtest_adapter import PJtestAdapter
 
 MAX_FRAME = 1024 * 1024
 
@@ -25,6 +27,12 @@ class Worker:
         self.sequence = 0
         self.assigned = None
         self.process = None
+        self.executor = ProcessExecutor(
+            lambda: self.request("worker_heartbeat", dict(worker_id=self.args.worker_id)))
+        self.adapter = (PJtestAdapter(args.pjtest_config, args.worker_id, self.executor.heartbeat)
+                        if args.pjtest_config else None)
+        if self.adapter and args.output == Path("worker-output"):
+            args.output = self.adapter.log_root
 
     def receive(self, deadline):
         while True:
@@ -59,7 +67,9 @@ class Worker:
                 or not isinstance(data.get("target"), str)
                 or not isinstance(data.get("revision"), str)):
             raise RuntimeError("unexpected or excess assignment")
-        self.assigned = data["task_id"]
+        self.assigned = data
+        if not self.adapter and data.get("payload"):
+            raise RuntimeError("demo Worker refuses business regression payload")
 
     def request(self, kind, data):
         self.sequence += 1
@@ -79,6 +89,7 @@ class Worker:
             return
 
     def stop_process(self):
+        self.executor.stop()
         if self.process is not None:
             # A separate process group prevents orphan descendants on timeout/shutdown.
             try:
@@ -89,43 +100,30 @@ class Worker:
             self.process = None
 
     def execute(self, root):
-        task_id = self.assigned
+        assignment = self.assigned
+        task_id = assignment["task_id"]
         self.request("task_start", dict(task_id=task_id, worker_id=self.args.worker_id))
         directory = root / str(task_id)
-        directory.mkdir()
-        status, code, pid = "FAILED", None, None
-        try:
+        if self.adapter:
+            result = self.adapter.execute(assignment, directory)
+            if not self.adapter.healthy:
+                # Fail closed: no terminal report/released slot on cleanup failure.
+                raise RuntimeError("PJtest cleanup failed; Worker quarantined; inspect local result.json")
+        else:
+            directory.mkdir()
             with (directory / "stdout.log").open("xb") as out, (directory / "stderr.log").open("xb") as err:
-                # Local operator configuration only; no shell, target/revision are never evaluated.
                 script = ("import sys,time; print('demo stdout',flush=True); "
                           "print('demo stderr',file=sys.stderr,flush=True); "
                           "time.sleep(float(sys.argv[1])); sys.exit(int(sys.argv[2]))")
-                self.process = subprocess.Popen(
+                pid, code, timed_out = self.executor.run(
                     [sys.executable, "-u", "-c", script, str(self.args.demo_seconds),
-                     str(self.args.demo_exit_code)], stdout=out, stderr=err,
-                    start_new_session=True)
-                pid = self.process.pid
-                (directory / "pid").write_text(str(pid) + "\n")
-                deadline = time.monotonic() + self.args.task_timeout
-                heartbeat = time.monotonic()
-                while self.process.poll() is None:
-                    if time.monotonic() >= deadline:
-                        self.stop_process()
-                        status = "TIMEOUT"
-                        code = -signal.SIGKILL
-                        break
-                    if time.monotonic() >= heartbeat:
-                        self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
-                        heartbeat = time.monotonic() + 1
-                    time.sleep(0.02)
-                if self.process is not None:
-                    code = self.process.wait()
-                    self.process = None
-                    status = "SUCCEEDED" if code == 0 else "FAILED"
-        finally:
-            self.stop_process()
-        result = dict(task_id=task_id, pid=pid, exit_code=code, status=status)
-        (directory / "result.json").write_text(json.dumps(result) + "\n")
+                     str(self.args.demo_exit_code)], directory, os.environ.copy(), out, err,
+                    self.args.task_timeout, grace=0,
+                    on_start=lambda child_pid: (directory / "pid").write_text(str(child_pid) + "\n"))
+            result = dict(task_id=task_id, pid=pid, exit_code=(-signal.SIGKILL if timed_out else code),
+                          status=("TIMEOUT" if timed_out else "SUCCEEDED" if code == 0 else "FAILED"))
+            (directory / "result.json").write_text(json.dumps(result) + "\n")
+        status = result["status"]
         # The server can send the next assignment before acknowledging this result.
         self.assigned = None
         self.request("task_result", dict(task_id=task_id, worker_id=self.args.worker_id,
@@ -162,7 +160,12 @@ def main():
     parser.add_argument("--demo-seconds", type=float, default=3)
     parser.add_argument("--demo-exit-code", type=int, default=0)
     parser.add_argument("--task-timeout", type=float, default=30)
+    parser.add_argument("--pjtest-config", type=Path,
+                        help="enable single-case PJtest mode using this local JSON config")
+    parser.add_argument("--demo", action="store_true", help="explicitly enable non-business demo mode")
     args = parser.parse_args()
+    if bool(args.pjtest_config) == args.demo:
+        parser.error("choose exactly one of --pjtest-config or --demo")
     if (not 1 <= args.port <= 65535 or not 1 <= len(args.worker_id.encode()) <= 256
             or not math.isfinite(args.demo_seconds) or args.demo_seconds < 0
             or not math.isfinite(args.task_timeout) or args.task_timeout <= 0
@@ -183,4 +186,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

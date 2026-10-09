@@ -15,6 +15,7 @@ struct SubmitTaskRequest {
     std::string target;
     std::string revision;
     int priority{0};
+    nlohmann::json payload = nlohmann::json::object();
 };
 
 struct QueryTaskRequest {
@@ -43,6 +44,7 @@ struct TaskAssignRequest {
     std::string target;
     std::string revision;
     int priority{0};
+    nlohmann::json payload = nlohmann::json::object();
 };
 
 // Conversion functions

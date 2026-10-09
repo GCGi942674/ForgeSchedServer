@@ -6,6 +6,8 @@ CMakeFiles/
 bin/
 reference/
 /tmp
+__pycache__/
+*.pyc
 
 # Object files & binaries
 *.cmake

@@ -3,6 +3,7 @@
 #include "task/TaskType.h"
 #include "task/TaskStatus.h"
 #include "task/TaskLimits.h"
+#include "task/RegressionPayload.h"
 #include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
 
@@ -25,6 +26,7 @@ std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) 
         LOG_WARN(LogModule::TASK, "Task metadata exceeds size limit");
         return std::nullopt;
     }
+    if (!validRegressionPayload(request.payload)) return std::nullopt;
     if (request.type == TaskType::UNKNOWN) {
         LOG_WARN(LogModule::TASK, "Invalid create request: unknown task type");
         return std::nullopt;
@@ -49,6 +51,7 @@ std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) 
 
     Task task(id, request.type, request.target, request.revision);
     task.setPriority(request.priority);
+    task.setPayload(request.payload);
 
     if (!scheduler_.submitTask(std::move(task))) {
         LOG_ERROR(LogModule::TASK, "Generated task could not be submitted to Scheduler");

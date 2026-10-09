@@ -18,7 +18,7 @@ int main(int argc, char** argv) { return testMain([&] {
         ControlTestServer server;
         auto ready = connectTo(server.port);
         auto output = std::string(path) + "/" + std::to_string(mode);
-        std::vector<std::string> args{argv[1], argv[2], "--port", std::to_string(server.port),
+        std::vector<std::string> args{argv[1], argv[2], "--demo", "--port", std::to_string(server.port),
             "--worker-id", "process-worker", "--output", output, "--demo-seconds",
             mode >= 2 ? "20" : "0.1", "--demo-exit-code", mode == 1 ? "7" : "0",
             "--task-timeout", mode == 2 ? "0.2" : "5"};

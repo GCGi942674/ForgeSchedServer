@@ -8,6 +8,7 @@
 #include "scheduler/Scheduler.h"
 #include <optional>
 #include <string>
+#include "nlohmann/json.hpp"
 
 namespace ForgeSched {
 
@@ -16,6 +17,7 @@ struct CreateTaskRequest {
     std::string target;
     std::string revision;
     int priority{0};
+    nlohmann::json payload = nlohmann::json::object();
 };
 
 class SchedulingDriver;
