@@ -8,6 +8,7 @@ reference/
 /tmp
 __pycache__/
 *.pyc
+workers_slots/
 
 # Object files & binaries
 *.cmake
