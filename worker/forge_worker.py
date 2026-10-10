@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Single-slot Linux demo executor. Never executes commands from task metadata."""
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -35,6 +36,46 @@ class Worker:
                         if args.pjtest_config else None)
         if self.adapter and not args.pjtest_paths.get("log_root"):
             args.output = self.adapter.log_root
+
+    def pending_path(self):
+        identity = hashlib.sha256(self.args.worker_id.encode("utf-8")).hexdigest()[:24]
+        return self.args.output / ("pending-report-" + identity + ".json")
+
+    def save_report(self, report):
+        path = self.pending_path()
+        fd, temporary = tempfile.mkstemp(prefix=".pending-", dir=str(self.args.output))
+        try:
+            with os.fdopen(fd, "w") as stream:
+                json.dump(report, stream)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, str(path))
+            directory_fd = os.open(str(self.args.output), os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    def flush_report(self):
+        path = self.pending_path()
+        if not path.exists():
+            return
+        report = json.loads(path.read_text(encoding="utf-8"))
+        if (not isinstance(report, dict) or report.get("worker_id") != self.args.worker_id or
+                type(report.get("task_id")) is not int or
+                report.get("status") not in ("SUCCEEDED", "FAILED", "TIMEOUT") or
+                not isinstance(report.get("message"), str)):
+            raise RuntimeError("invalid pending report; inspect " + str(path))
+        self.request("task_result", report)
+        path.unlink()
+        directory_fd = os.open(str(self.args.output), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
     def receive(self, deadline):
         while True:
@@ -126,19 +167,24 @@ class Worker:
                           status=("TIMEOUT" if timed_out else "SUCCEEDED" if code == 0 else "FAILED"))
             (directory / "result.json").write_text(json.dumps(result) + "\n")
         status = result["status"]
+        report = dict(task_id=task_id, worker_id=self.args.worker_id,
+                      status=status, message=json.dumps(result))
+        self.save_report(report)
         # The server can send the next assignment before acknowledging this result.
         self.assigned = None
-        self.request("task_result", dict(task_id=task_id, worker_id=self.args.worker_id,
-                                        status=status, message=json.dumps(result)))
+        self.flush_report()
         print(json.dumps(result), flush=True)
 
     def run(self):
         self.args.output.mkdir(parents=True, exist_ok=True)
+        if self.pending_path().exists() and self.pending_path().is_symlink():
+            raise RuntimeError("unsafe pending report path")
         root = Path(tempfile.mkdtemp(prefix="run-", dir=str(self.args.output)))
         try:
             self.sock = socket.create_connection((self.args.host, self.args.port), timeout=5)
             self.request("worker_register", dict(worker_id=self.args.worker_id,
                                                  hostname=socket.gethostname(), slots=1))
+            self.flush_report()
             while True:
                 if self.assigned is not None:
                     self.execute(root)
@@ -178,6 +224,9 @@ def main():
         args.pjtest_paths = {}
         if config.get("worker.test2_root"):
             args.pjtest_paths["test2_root"] = config["worker.test2_root"]
+        for key in ("galaxcore_root", "svn_url", "svn_revision"):
+            if config.get("worker." + key):
+                args.pjtest_paths[key] = config["worker." + key]
         if config.get("worker.artifact_root"):
             args.pjtest_paths["artifact_root"] = config["worker.artifact_root"]
         if explicit_output or not explicit_config:

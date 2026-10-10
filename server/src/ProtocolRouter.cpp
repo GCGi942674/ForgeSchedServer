@@ -213,17 +213,20 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::NOT_FOUND, "task not found");
             }
 
-            if (task->getStatus() != TaskStatus::RUNNING) {
-                LOG_WARN(LogModule::NETWORK, "TASK_RESULT rejected: task not in RUNNING state");
-               return buildResponse(request, ResponseCode::INVALID_STATE, "task not running");
-            }
-
             if (task->getWorkerId() != result_req.worker_id) {
                 LOG_ERROR(LogModule::NETWORK, "TASK_RESULT rejected: worker_id mismatch");
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "worker_id mismatch");
             }
 
             auto summary = executionSummary(result_req.message, result_req.status);
+            if (!summary.is_null() && task->getStatus() == result_req.status &&
+                task->getExecutionSummary() == summary) {
+                return buildResponse(request, ResponseCode::OK, "ok");
+            }
+            if (task->getStatus() != TaskStatus::RUNNING) {
+                LOG_WARN(LogModule::NETWORK, "TASK_RESULT rejected: task not in RUNNING state");
+               return buildResponse(request, ResponseCode::INVALID_STATE, "task not running");
+            }
             bool success = scheduler_.completeTask(result_req.task_id, result_req.status, std::move(summary));
             if (!success) {
                 return buildResponse(request, ResponseCode::INTERNAL_ERROR, "failed to complete task");

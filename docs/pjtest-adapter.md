@@ -1,4 +1,4 @@
-# PJtest Adapter — P0/P1 安全修复
+# PJtest Adapter — 单 slot 接入
 
 当前仅单 Worker、单 slot、单 case。真实 GalaxCore/Vivado 仍须内网验收。
 未实现 SQLite、自动恢复或远程取消。ASSIGNED/RUNNING 取消仍被拒绝。
@@ -11,7 +11,7 @@ Server、CLI、Worker 共用 `config/forgesched.conf`。多机部署时可用
 `FORGESCHED_CONFIG` 指向每台机器自己的配置副本：
 `server.bind_ip` 是监听地址，`network.server_ip` 是 Client/Worker 连接地址，
 `server.port` 为同一个端口。默认只监听本机；不要在无认证/TLS 的情况下开放公网。
-Worker 的 `worker.output_dir`、`worker.test2_root`、
+Worker 的 `worker.output_dir`、`worker.galaxcore_root`、`worker.test2_root`、
 `worker.artifact_root` 和 `worker.pjtest_config` 路径在该配置中集中指定；
 相对路径均相对于进程启动目录。
 
@@ -42,6 +42,29 @@ python3 worker/forge_worker.py --worker-id pjtest-slot-1
 `--output` 可临时覆盖 Worker 输出目录。旧 lock_root 不再控制保护范围：
 对规范化输入目录本身加内核 flock，锁与 Worker 名称无关。
 target 当前是业务标签，不隐式改变 case/器件/flow。
+
+真实工作机优先设置 `worker.galaxcore_root` 为该 slot 的完整 GalaxCore SVN
+工作副本根目录（其下必须有 `.svn`、`test2/run.sh` 和
+`test2/flow_config`）。没有副本时可另设 `worker.svn_url` 和可选的
+`worker.svn_revision`，首次启动 checkout 整个仓库；已有但不完整的目录
+不会被自动覆盖或删除。每个 Worker 进程仍只有一个 slot，多 slot 应使用各自
+独立的副本、worker ID 与输出目录。输出目录不能放进该副本。
+
+此模式下 ZIP 只需一个 `GalaxCore` 可执行文件，`flow` 仍来自 slot 的
+SVN 工作副本，不会被 ZIP 覆盖；相邻 manifest 可选。没有发布方 manifest
+时记录 `worker_observed`、ZIP 哈希和 run.sh 哈希，但这**不能证明**
+ZIP 与所填 revision 的真实对应关系，须由内网发布流程核对。安装前拒绝
+目录穿越/链接和仍在使用旧二进制的进程；执行期间使用原 slot 的 test2，
+原有 flow_config 在安全清理后恢复。完整 slot 模式不提供文件系统级隔离，
+只适用于可信 SVN 工作副本/脚本。
+
+结果先原子落盘为输出目录下按 worker ID 命名的 pending-report 文件，再发
+`TASK_RESULT`。回执丢失时保留文件；同 ID Worker 重启并注册后先重放，
+服务端对相同 worker、状态、结果摘要作幂等确认。若服务端重启丢失了内存
+任务，重放会被拒绝并保留文件，需要人工核查，**没有自动恢复**。
+
+以下“必须有 manifest、私有 workspace、ZIP flow”规则仅适用于未配置
+`galaxcore_root` 的旧离线模式，不能用作真实工作机部署要求。
 
 ## 构建发布契约
 

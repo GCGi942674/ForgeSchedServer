@@ -8,6 +8,8 @@ import re
 import shlex
 import shutil
 import stat
+import subprocess
+import tempfile
 import time
 import uuid
 import zipfile
@@ -65,7 +67,13 @@ class PJtestAdapter:
         config = json.loads(Path(config_file).read_text(encoding="utf-8"))
         if path_overrides:
             config.update(path_overrides)
-        self.work_root = Path(config["test2_root"]).expanduser().resolve(strict=True)
+        self.galaxcore_root = None
+        if config.get("galaxcore_root"):
+            self.galaxcore_root = Path(config["galaxcore_root"]).expanduser().resolve()
+            self._ensure_checkout(config)
+            self.work_root = self.galaxcore_root / "test2"
+        else:
+            self.work_root = Path(config["test2_root"]).expanduser().resolve(strict=True)
         self.artifacts = Path(config["artifact_root"]).expanduser().resolve(strict=True)
         self.log_root = Path(config["log_root"]).expanduser().resolve()
         self.worker_id = worker_id
@@ -85,6 +93,29 @@ class PJtestAdapter:
         self.log_root.mkdir(parents=True, exist_ok=True)
         self.executor = ProcessExecutor(heartbeat)
         self.healthy = True
+
+    def _ensure_checkout(self, config):
+        root = self.galaxcore_root
+        if not root.exists():
+            svn_url = config.get("svn_url")
+            revision = config.get("svn_revision")
+            if not isinstance(svn_url, str) or not svn_url:
+                raise AdapterError("slot checkout missing; configure svn_url")
+            if revision is not None and (not isinstance(revision, str) or
+                                         not re.fullmatch(r"[0-9]+", revision)):
+                raise AdapterError("invalid svn_revision")
+            root.parent.mkdir(parents=True, exist_ok=True)
+            command = ["svn", "checkout", "--non-interactive"]
+            if revision:
+                command.extend(["-r", revision])
+            command.extend([svn_url, str(root)])
+            # A failed checkout is left for the operator to inspect; never
+            # delete an existing or partly populated slot automatically.
+            subprocess.run(command, check=True, timeout=7200, stdout=subprocess.DEVNULL)
+        if (not root.is_dir() or not (root / ".svn").is_dir() or
+                not (root / "test2/run.sh").is_file() or
+                not (root / "test2/flow_config").is_file()):
+            raise AdapterError("slot is not a complete GalaxCore SVN checkout")
 
     def validate(self, task):
         payload = task.get("payload")
@@ -128,6 +159,8 @@ class PJtestAdapter:
         return found[0]
 
     def _prepare(self, artifact, revision, directory):
+        if self.galaxcore_root is not None:
+            return self._prepare_full_slot(artifact, revision, directory)
         manifest_path = Path(str(artifact) + ".manifest.json")
         if manifest_path.is_symlink():
             raise AdapterError("unsafe artifact manifest")
@@ -205,6 +238,89 @@ class PJtestAdapter:
         (directory / "manifest.json").write_text(json.dumps(manifest, indent=2))
         return destination, binary, manifest
 
+    def _prepare_full_slot(self, artifact, revision, directory):
+        """Install only the versioned binary into a complete slot checkout."""
+        source = self.work_root
+        manifest_path = Path(str(artifact) + ".manifest.json")
+        if manifest_path.is_symlink():
+            raise AdapterError("unsafe artifact manifest")
+        manifest = None
+        if manifest_path.exists():
+            with manifest_path.open("rb") as stream:
+                raw = stream.read(65537)
+            if len(raw) > 65536:
+                raise AdapterError("invalid artifact manifest")
+            manifest = json.loads(raw)
+            if (not isinstance(manifest, dict) or type(manifest.get("spec_version")) is not int or
+                    manifest["spec_version"] != 1 or manifest.get("revision") != revision or
+                    not isinstance(manifest.get("test2_revision"), str) or
+                    not manifest["test2_revision"] or
+                    any(not isinstance(manifest.get(key), str) or
+                        not re.fullmatch(r"[0-9a-f]{64}", manifest[key])
+                        for key in ("archive_sha256", "test2_sha256"))):
+                raise AdapterError("invalid artifact manifest")
+        if artifact.stat().st_size > 2 * 1024**3:
+            raise AdapterError("artifact size limit")
+        source_hash = file_digest(artifact)
+        archive = directory / "artifact.zip"
+        shutil.copyfile(artifact, archive)
+        if file_digest(archive) != source_hash or (manifest and
+                                                    manifest["archive_sha256"] != source_hash):
+            raise AdapterError("artifact hash mismatch")
+        test2_hash = tree_digest(source) if manifest else None
+        if manifest and manifest["test2_sha256"] != test2_hash:
+            raise AdapterError("test2 hash mismatch")
+        binary = self.galaxcore_root / "bin/Linux_64/GalaxCore"
+        for path in (binary.parent.parent, binary.parent, binary):
+            if path.is_symlink():
+                raise AdapterError("unsafe slot binary path")
+        # A previous Worker can leave a live executable after a crash.
+        for process in Path("/proc").iterdir():
+            if not process.name.isdigit():
+                continue
+            try:
+                executable = os.readlink(str(process / "exe"))
+                if executable.endswith(" (deleted)"):
+                    executable = executable[:-10]
+            except (OSError, PermissionError):
+                continue
+            if executable == str(binary):
+                raise AdapterError("slot_busy: old GalaxCore process still running")
+        with zipfile.ZipFile(archive) as package:
+            entries = package.infolist()
+            if len(entries) > 100000 or sum(entry.file_size for entry in entries) > 2 * 1024**3:
+                raise AdapterError("artifact extraction limit")
+            binaries = [entry for entry in entries if not entry.is_dir() and
+                        Path(entry.filename).name in ("GalaxCore", "Galaxcore")]
+            if len(binaries) != 1:
+                raise AdapterError("artifact must contain one GalaxCore binary")
+            for entry in entries:
+                if (entry.filename.startswith("/") or "\\" in entry.filename or
+                        any(part in (".", "..") for part in entry.filename.split("/")) or
+                        stat.S_IFMT(entry.external_attr >> 16) == stat.S_IFLNK):
+                    raise AdapterError("unsafe artifact archive")
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=str(binary.parent), prefix=".GalaxCore-",
+                                                 delete=False) as output:
+                    temporary = Path(output.name)
+                    with package.open(binaries[0]) as input_file:
+                        shutil.copyfileobj(input_file, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+                temporary.chmod(0o755)
+                os.replace(str(temporary), str(binary))
+            finally:
+                if temporary is not None and temporary.exists():
+                    temporary.unlink()
+        observed = dict(manifest or {}, spec_version=1, revision=revision,
+                        archive_sha256=source_hash, test2_sha256=test2_hash,
+                        run_sh_sha256=file_digest(source / "run.sh"),
+                        provenance="publisher_manifest" if manifest else "worker_observed")
+        (directory / "manifest.json").write_text(json.dumps(observed, indent=2))
+        return source, binary, observed
+
     def _run_clean(self, env, output):
         script = self.work_root / "clean.sh"
         if self.clean and script.is_file():
@@ -261,8 +377,9 @@ class PJtestAdapter:
             raise AdapterError("worker quarantined after cleanup failure")
         directory = Path(directory).resolve()
         source = self.work_root
-        if directory == source or source in directory.parents:
-            raise AdapterError("output must not be inside test2 inputs")
+        protected = self.galaxcore_root or source
+        if directory == protected or protected in directory.parents:
+            raise AdapterError("output must not be inside slot inputs")
         directory.mkdir()
         result = dict(task_id=task["task_id"], worker_id=self.worker_id,
                       revision=task.get("revision"), payload=task.get("payload"),
@@ -273,6 +390,8 @@ class PJtestAdapter:
         lock_fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY)
         env = None
         prepared = False
+        flow_original = None
+        config_path = None
         with (directory / "stdout.log").open("xb") as output, (directory / "stderr.log").open("xb") as err:
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -300,6 +419,9 @@ class PJtestAdapter:
                             "VIVADO_RUNNER_NAMESPACE": namespace,
                             "RUN_SH_LOCK_DIR": str(directory / "locks")})
                 config_path = root / "flow_config"
+                if self.galaxcore_root is not None:
+                    flow_original = config_path.read_bytes()
+                    (directory / "flow_config.before").write_bytes(flow_original)
                 self._write_flow_config(config_path, settings)
                 shutil.copyfile(config_path, directory / "flow_config")
                 result.update(artifact=str(artifact), manifest=manifest, case=str(case),
@@ -373,6 +495,16 @@ class PJtestAdapter:
                             self.healthy = False
                             result.update(status="FAILED", reason="post_clean_failed", worker_healthy=False)
                 finally:
+                    if flow_original is not None:
+                        if self.executor.safe:
+                            try:
+                                config_path.write_bytes(flow_original)
+                            except OSError:
+                                self.healthy = False
+                                result.update(status="FAILED", reason="flow_restore_failed",
+                                              worker_healthy=False)
+                        else:
+                            self.healthy = False
                     self.work_root = source
                     os.close(lock_fd)
                     result["finished_at"] = time.time()

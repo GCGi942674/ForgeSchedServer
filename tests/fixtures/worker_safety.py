@@ -104,6 +104,68 @@ class Safety(unittest.TestCase):
         self.assertNotEqual(result["workspace"], str(self.source))
         self.assertTrue((self.root / "result/result.env").is_file())
 
+    def test_complete_slot_accepts_binary_only_zip(self):
+        slot = self.root / "slot"
+        (slot / ".svn").mkdir()
+        (slot / "flow").mkdir()
+        (slot / "flow/marker").write_text("local flow")
+        (slot / "resources").mkdir()
+        (slot / "resources/marker").write_text("complete checkout")
+        script = self.source / "run.sh"
+        script.write_text(script.read_text().replace(
+            "grep -q '^route_design 1$' flow_config || exit 9",
+            "[ -f ../resources/marker ] || exit 9\n"
+            "[ -f ../flow/marker ] || exit 9\n"
+            "grep -q '^route_design 1$' flow_config || exit 9"))
+        original_flow = (self.source / "flow_config").read_bytes()
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            archive.writestr("build/GalaxCore", "#!/bin/sh\nexit 0\n")
+        Path(str(self.archive) + ".manifest.json").unlink()
+        config = json.loads(self.config.read_text())
+        config.pop("test2_root")
+        config["galaxcore_root"] = str(slot)
+        self.config.write_text(json.dumps(config))
+        adapter = self.adapter()
+        first = self.run_adapter(adapter)
+        self.assertEqual(first["status"], "SUCCEEDED")
+        self.assertEqual(first["manifest"]["provenance"], "worker_observed")
+        self.assertEqual(first["workspace"], str(self.source))
+        self.assertEqual((self.source / "flow_config").read_bytes(), original_flow)
+        self.assertEqual((slot / "flow/marker").read_text(), "local flow")
+        self.assertTrue((slot / "bin/Linux_64/GalaxCore").is_file())
+        second = self.run_adapter(adapter, "second")
+        self.assertEqual(second["status"], "SUCCEEDED")
+        self.assertEqual((self.source / "flow_config").read_bytes(), original_flow)
+
+    def test_complete_slot_requires_svn_checkout(self):
+        config = json.loads(self.config.read_text())
+        config["galaxcore_root"] = str(self.root / "slot")
+        self.config.write_text(json.dumps(config))
+        with self.assertRaisesRegex(AdapterError, "complete GalaxCore SVN checkout"):
+            self.adapter()
+
+    def test_pending_report_survives_lost_ack(self):
+        from types import SimpleNamespace
+        args = SimpleNamespace(worker_id="worker-1", output=self.root)
+        first = Worker.__new__(Worker)
+        first.args = args
+        report = dict(task_id=1, worker_id="worker-1", status="SUCCEEDED", message="result")
+        first.save_report(report)
+        sent = []
+        def lost_ack(kind, data):
+            sent.append((kind, data))
+            raise ConnectionError("ack lost")
+        first.request = lost_ack
+        with self.assertRaises(ConnectionError):
+            first.flush_report()
+        self.assertTrue(first.pending_path().is_file())
+        second = Worker.__new__(Worker)
+        second.args = args
+        second.request = lambda kind, data: sent.append((kind, data))
+        second.flush_report()
+        self.assertEqual(sent, [("task_result", report), ("task_result", report)])
+        self.assertFalse(second.pending_path().exists())
+
     def test_canonical_lock_not_worker_identity(self):
         fd = os.open(self.source, os.O_RDONLY | os.O_DIRECTORY)
         try:

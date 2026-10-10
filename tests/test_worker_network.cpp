@@ -68,7 +68,8 @@ int main() { return testMain([] {
     CHECK(host.worker.getWorkerManager().getWorker("w")->getStatus() == WorkerStatus::ONLINE);
     CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 1);
     auto start = envelope("task_start", {{"task_id", *task}, {"worker_id", "w"}});
-    auto finish = envelope("task_result", {{"task_id", *task}, {"worker_id", "w"}, {"status", "SUCCEEDED"}});
+    auto finish = envelope("task_result", {{"task_id", *task}, {"worker_id", "w"},
+        {"status", "SUCCEEDED"}, {"message", R"({"status":"SUCCEEDED","pid":123})"}});
     response(b.value, finish, false);
     auto wrong = start; wrong["data"]["worker_id"] = "other"; response(b.value, wrong, false);
     // Disconnect while ASSIGNED: reservation stays until explicit completion/cancellation.
@@ -82,7 +83,9 @@ int main() { return testMain([] {
     eventually([&] { return host.worker.getWorkerManager().getWorker("w")->getStatus() == WorkerStatus::OFFLINE; });
     CHECK(host.worker.getTaskService().getTask(*task)->getStatus() == TaskStatus::RUNNING);
     auto d = connectTo(host.port); response(d.value, reg, true);
-    response(d.value, finish, true); response(d.value, finish, false);
+    response(d.value, finish, true); response(d.value, finish, true);
+    auto conflicting = finish; conflicting["data"]["status"] = "FAILED";
+    response(d.value, conflicting, false);
     CHECK(host.worker.getWorkerManager().getWorker("w")->getUsedSlots() == 0);
     // A half-close may accompany more frames than one read turn can consume.
     std::vector<char> burst;

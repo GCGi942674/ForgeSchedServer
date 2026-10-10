@@ -80,7 +80,10 @@ int main() { return testMain([] {
         CHECK(query["request_id"] == expected);
         CHECK(query["data"]["result"]["status"] == "SUCCEEDED");
     }
-    response(worker.value, finish, false);
+    response(worker.value, finish, true);
+    auto conflicting = finish;
+    conflicting["data"]["message"] = R"({"status":"SUCCEEDED","reason":"different"})";
+    response(worker.value, conflicting, false);
     CHECK(api.query(id).data["result"]["execution"]["reason"] == "pass");
     CHECK(api.cancel(id).data["code"] == 3);
     CHECK(api.query(999999).data["code"] == 2);
