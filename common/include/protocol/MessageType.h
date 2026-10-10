@@ -8,6 +8,7 @@ namespace ForgeSched::Protocol {
 enum class MessageType {
     SUBMIT_TASK,
     QUERY_TASK,
+    QUERY_STATUS,
     CANCEL_TASK,
 
     WORKER_REGISTER,

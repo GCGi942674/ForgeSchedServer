@@ -57,3 +57,12 @@ add_executable(test_worker_safety test_worker_safety.cpp)
 add_test(NAME test_worker_safety COMMAND test_worker_safety
   ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/fixtures/worker_safety.py)
 set_tests_properties(test_worker_safety PROPERTIES TIMEOUT 90)
+
+add_executable(test_server_flow test_server_flow.cpp)
+target_link_libraries(test_server_flow PRIVATE forgesched_server_core)
+add_test(NAME test_server_flow COMMAND test_server_flow)
+set_tests_properties(test_server_flow PROPERTIES TIMEOUT 45)
+
+add_test(NAME test_clock COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_clock.py)
+set_tests_properties(test_clock PROPERTIES TIMEOUT 45)

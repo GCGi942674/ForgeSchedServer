@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "worker"))
 from pjtest_adapter import PJtestAdapter, AdapterError, tree_digest, file_digest
 from process_executor import ProcessExecutor, ExecutionContainmentError
-from forge_worker import Worker
+from forge_worker import Worker, shared_pjtest_settings
 from runtime_config import load_config
 
 
@@ -137,12 +137,99 @@ class Safety(unittest.TestCase):
         self.assertEqual(second["status"], "SUCCEEDED")
         self.assertEqual((self.source / "flow_config").read_bytes(), original_flow)
 
+    def test_task_flow_snapshot_overrides_slot_file(self):
+        slot = self.root / "slot"
+        (slot / ".svn").mkdir()
+        Path(str(self.archive) + ".manifest.json").unlink()
+        config = json.loads(self.config.read_text())
+        config.pop("test2_root")
+        config["galaxcore_root"] = str(slot)
+        config["flow_profiles"] = {}
+        config["require_server_flow"] = True
+        self.config.write_text(json.dumps(config))
+        script = self.source / "run.sh"
+        script.write_text(script.read_text().replace(
+            "grep -q '^original 1$' flow_config || exit 9",
+            "! grep -q '^stale 1$' flow_config || exit 9\n"
+            "grep -q '^original 1$' flow_config || exit 9"))
+        (self.source / "flow_config").write_text("stale 1\n")
+        task = dict(self.task)
+        task["payload"] = dict(self.task["payload"], spec_version=2,
+                               flow_config={"original": 1, "route_design": 1})
+        adapter = self.adapter()
+        result = adapter.execute(task, self.root / "snapshot-result")
+        self.assertEqual(result["status"], "SUCCEEDED")
+        self.assertEqual((self.root / "snapshot-result/flow_config").read_text(),
+                         "original 1\nroute_design 1\n")
+        self.assertEqual((self.source / "flow_config").read_text(), "stale 1\n")
+
     def test_complete_slot_requires_svn_checkout(self):
         config = json.loads(self.config.read_text())
         config["galaxcore_root"] = str(self.root / "slot")
         self.config.write_text(json.dumps(config))
-        with self.assertRaisesRegex(AdapterError, "complete GalaxCore SVN checkout"):
+        with self.assertRaisesRegex(AdapterError, "slot SVN checkout incomplete"):
             self.adapter()
+
+    def test_checkout_without_flow_config_is_valid(self):
+        slot = self.root / "slot"
+        (slot / ".svn").mkdir()
+        (self.source / "flow_config").unlink()
+        Path(str(self.archive) + ".manifest.json").unlink()
+        config = json.loads(self.config.read_text())
+        config.pop("test2_root")
+        config["galaxcore_root"] = str(slot)
+        config["flow_profiles"] = {}
+        self.config.write_text(json.dumps(config))
+        adapter = self.adapter()
+        self.assertEqual(self.run_adapter(adapter)["reason"],
+                         "slot flow_config missing; configure worker.flow settings")
+        config["flow_profiles"] = {"route": {"original": 1, "route_design": 1}}
+        self.config.write_text(json.dumps(config))
+        adapter = self.adapter()
+        self.assertEqual(self.run_adapter(adapter, "with-flow")["status"], "SUCCEEDED")
+        self.assertFalse((self.source / "flow_config").exists())
+
+    def test_worker_creates_and_reuses_complete_svn_slot(self):
+        repository = self.root / "svn-repository"
+        subprocess.run(["svnadmin", "create", str(repository)], check=True,
+                       stdout=subprocess.DEVNULL)
+        staged = self.root / "staged"
+        (staged / "test2").mkdir(parents=True)
+        for name in ("run.sh", "flow_config", "clean.sh"):
+            shutil.copyfile(self.source / name, staged / "test2" / name)
+        (staged / "test2/flow_config").write_text("original 1\nroute_design 1\n")
+        (staged / "test2/cases/success").mkdir(parents=True)
+        shutil.copyfile(self.source / "cases/success/run.tcl",
+                        staged / "test2/cases/success/run.tcl")
+        (staged / "flow").mkdir()
+        (staged / "flow/marker").write_text("from svn")
+        subprocess.run(["svn", "import", "-m", "fixture", str(staged), repository.as_uri()],
+                       check=True, stdout=subprocess.DEVNULL)
+        Path(str(self.archive) + ".manifest.json").unlink()
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            archive.writestr("GalaxCore", "#!/bin/sh\nexit 0\n")
+        config = {
+            "worker.slots_root": str(self.root / "workers_slots"),
+            "worker.svn_url": repository.as_uri(),
+            "worker.artifact_root": str(self.root / "artifacts"),
+        }
+        settings = shared_pjtest_settings(config, "slot-1", self.root / "worker-output")
+        first = PJtestAdapter(settings, "slot-1", lambda: None)
+        self.assertTrue((first.galaxcore_root / ".svn").is_dir())
+        self.assertEqual((first.galaxcore_root / "flow/marker").read_text(), "from svn")
+        task = dict(self.task)
+        task["payload"] = dict(self.task["payload"], spec_version=2,
+                               flow_config={"original": 1, "route_design": 1})
+        result = first.execute(task, self.root / "first-svn-result")
+        self.assertEqual(result["status"], "SUCCEEDED")
+        self.assertEqual((first.work_root / "flow_config").read_text(),
+                         "original 1\nroute_design 1\n")
+        second = PJtestAdapter(settings, "slot-1", lambda: None)
+        self.assertEqual(second.galaxcore_root, first.galaxcore_root)
+        self.assertEqual(second.execute(task, self.root / "second-svn-result")["status"],
+                         "SUCCEEDED")
+        with self.assertRaises(ValueError):
+            shared_pjtest_settings(config, "../escape", self.root / "worker-output")
 
     def test_pending_report_survives_lost_ack(self):
         from types import SimpleNamespace

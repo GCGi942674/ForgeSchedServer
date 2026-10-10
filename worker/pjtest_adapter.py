@@ -1,4 +1,4 @@
-"""Fail-closed single-case PJtest execution in a private per-run workspace."""
+"""Fail-closed single-case PJtest execution in a dedicated slot checkout."""
 import fcntl
 import hashlib
 import json
@@ -64,7 +64,8 @@ def file_digest(path):
 
 class PJtestAdapter:
     def __init__(self, config_file, worker_id, heartbeat, path_overrides=None):
-        config = json.loads(Path(config_file).read_text(encoding="utf-8"))
+        config = (dict(config_file) if isinstance(config_file, dict) else
+                  json.loads(Path(config_file).read_text(encoding="utf-8")))
         if path_overrides:
             config.update(path_overrides)
         self.galaxcore_root = None
@@ -78,6 +79,7 @@ class PJtestAdapter:
         self.log_root = Path(config["log_root"]).expanduser().resolve()
         self.worker_id = worker_id
         self.profiles = config["flow_profiles"]
+        self.require_server_flow = bool(config.get("require_server_flow", False))
         self.clean = config.get("clean", True)
         self.environment = config.get("environment", {})
         if (not isinstance(self.environment, dict) or any(
@@ -86,7 +88,9 @@ class PJtestAdapter:
             raise AdapterError("invalid local environment")
         self.grace = float(config.get("terminate_grace_seconds", 2))
         if (not self.work_root.is_dir() or not self.artifacts.is_dir() or
-                not isinstance(self.profiles, dict) or not self.profiles or
+                not isinstance(self.profiles, dict) or
+                (not self.profiles and self.galaxcore_root is None and
+                 not self.require_server_flow) or
                 type(self.clean) is not bool or not 0 <= self.grace <= 60 or
                 not (self.work_root / "run.sh").is_file()):
             raise AdapterError("invalid local PJtest configuration")
@@ -111,18 +115,29 @@ class PJtestAdapter:
             command.extend([svn_url, str(root)])
             # A failed checkout is left for the operator to inspect; never
             # delete an existing or partly populated slot automatically.
-            subprocess.run(command, check=True, timeout=7200, stdout=subprocess.DEVNULL)
-        if (not root.is_dir() or not (root / ".svn").is_dir() or
-                not (root / "test2/run.sh").is_file() or
-                not (root / "test2/flow_config").is_file()):
-            raise AdapterError("slot is not a complete GalaxCore SVN checkout")
+            try:
+                print("[WORKER] SVN checkout: {} -> {}".format(svn_url, root), flush=True)
+                subprocess.run(command, check=True, timeout=7200, stdout=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise AdapterError("slot SVN checkout failed: " + str(error)) from error
+        required = ((root, "directory"), (root / ".svn", "directory"),
+                    (root / "test2", "directory"), (root / "test2/run.sh", "file"))
+        missing = [str(path) for path, kind in required if not (
+            path.is_dir() if kind == "directory" else path.is_file())]
+        if missing:
+            raise AdapterError("slot SVN checkout incomplete; missing: " + ", ".join(missing))
 
     def validate(self, task):
         payload = task.get("payload")
+        version = payload.get("spec_version") if isinstance(payload, dict) else None
+        required = {"spec_version", "case", "flow", "timeout_seconds"}
         if (task.get("task_type") != "REGRESSION" or type(task.get("task_id")) is not int or
                 task["task_id"] <= 0 or not isinstance(payload, dict) or
-                set(payload) != {"spec_version", "case", "flow", "timeout_seconds"} or
-                type(payload["spec_version"]) is not int or payload["spec_version"] != 1 or
+                not required.issubset(payload) or
+                type(version) is not int or version not in (1, 2) or
+                (version == 1 and (set(payload) != required or self.require_server_flow)) or
+                (version == 2 and (set(payload) not in
+                    (required | {"flow_config"}, required | {"flow_config", "context"}))) or
                 type(payload["timeout_seconds"]) is not int or
                 not 1 <= payload["timeout_seconds"] <= 86400):
             raise AdapterError("invalid regression payload")
@@ -131,17 +146,29 @@ class PJtestAdapter:
                 not re.fullmatch(r"[A-Za-z0-9_.\-/]+", relative) or
                 any(x in ("", ".", "..") for x in relative.split("/")) or
                 not relative.endswith("/run.tcl") or
-                not isinstance(flow, str) or not _SAFE_FLOW.fullmatch(flow) or flow not in self.profiles or
+                not isinstance(flow, str) or not _SAFE_FLOW.fullmatch(flow) or
+                (version == 1 and flow not in self.profiles and self.galaxcore_root is None) or
                 not isinstance(revision, str) or not _SAFE_REVISION.fullmatch(revision)):
             raise AdapterError("invalid case, flow or revision")
         case = (self.work_root / relative).resolve(strict=True)
         if self.work_root not in case.parents or not case.is_file() or case.name != "run.tcl":
             raise AdapterError("case must be a local run.tcl")
-        settings = self.profiles[flow]
-        if not isinstance(settings, dict) or not settings:
-            raise AdapterError("flow profile must contain local settings")
+        settings = payload["flow_config"] if version == 2 else self.profiles.get(flow, {})
+        if (not isinstance(settings, dict) or
+                (not settings and (version == 2 or self.galaxcore_root is None)) or
+                len(settings) > 64):
+            raise AdapterError("invalid flow_config")
+        if version == 2 and "context" in payload:
+            context = payload["context"]
+            if (not isinstance(context, dict) or len(context) > 4 or
+                    any(key not in ("template", "suite", "batch_id", "name") or
+                        not isinstance(value, str) or len(value) > 128
+                        for key, value in context.items())):
+                raise AdapterError("invalid regression context")
         for key, value in settings.items():
             if (not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or
+                    len(key) > 64 or
+                    (version == 2 and (type(value) is not int or not 0 <= value <= 1000000)) or
                     isinstance(value, (dict, list, bool)) or not isinstance(value, (str, int, float)) or
                     "\n" in str(value) or "\r" in str(value)):
                 raise AdapterError("invalid local flow setting")
@@ -391,6 +418,7 @@ class PJtestAdapter:
         env = None
         prepared = False
         flow_original = None
+        flow_restore_needed = False
         config_path = None
         with (directory / "stdout.log").open("xb") as output, (directory / "stderr.log").open("xb") as err:
             try:
@@ -420,9 +448,17 @@ class PJtestAdapter:
                             "RUN_SH_LOCK_DIR": str(directory / "locks")})
                 config_path = root / "flow_config"
                 if self.galaxcore_root is not None:
-                    flow_original = config_path.read_bytes()
-                    (directory / "flow_config.before").write_bytes(flow_original)
-                self._write_flow_config(config_path, settings)
+                    if config_path.is_file():
+                        flow_original = config_path.read_bytes()
+                        (directory / "flow_config.before").write_bytes(flow_original)
+                    elif not settings:
+                        raise AdapterError("slot flow_config missing; configure worker.flow settings")
+                    flow_restore_needed = True
+                if task["payload"]["spec_version"] == 2:
+                    config_path.write_text("".join("{} {}\n".format(k, settings[k])
+                                                   for k in sorted(settings)), encoding="utf-8")
+                elif settings or self.galaxcore_root is None:
+                    self._write_flow_config(config_path, settings)
                 shutil.copyfile(config_path, directory / "flow_config")
                 result.update(artifact=str(artifact), manifest=manifest, case=str(case),
                               workspace=str(root), namespace=namespace)
@@ -495,10 +531,13 @@ class PJtestAdapter:
                             self.healthy = False
                             result.update(status="FAILED", reason="post_clean_failed", worker_healthy=False)
                 finally:
-                    if flow_original is not None:
+                    if flow_restore_needed:
                         if self.executor.safe:
                             try:
-                                config_path.write_bytes(flow_original)
+                                if flow_original is None:
+                                    config_path.unlink()
+                                else:
+                                    config_path.write_bytes(flow_original)
                             except OSError:
                                 self.healthy = False
                                 result.update(status="FAILED", reason="flow_restore_failed",

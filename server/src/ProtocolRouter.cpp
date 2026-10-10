@@ -117,6 +117,25 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok", taskToJson(*task));
         }
 
+        case ForgeSched::Protocol::MessageType::QUERY_STATUS: {
+            if (!request.data.is_object() || !request.data.empty())
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid status request");
+            uint64_t queued = 0, assigned = 0, running = 0, pending = 0, total = 0;
+            for (const auto& task : scheduler_.getTasks()) {
+                ++total;
+                switch (task.getStatus()) {
+                    case TaskStatus::PENDING: ++pending; break;
+                    case TaskStatus::QUEUED: ++queued; break;
+                    case TaskStatus::ASSIGNED: ++assigned; break;
+                    case TaskStatus::RUNNING: ++running; break;
+                    default: break;
+                }
+            }
+            return buildResponse(request, ResponseCode::OK, "ok",
+                                 {{"queued", queued}, {"assigned", assigned},
+                                  {"running", running}, {"pending", pending}, {"total", total}});
+        }
+
         case ForgeSched::Protocol::MessageType::CANCEL_TASK: {
             ForgeSched::Protocol::DTO::CancelTaskRequest cancel_req;
             if (!ForgeSched::Protocol::DTO::fromJson(request.data, cancel_req)) {

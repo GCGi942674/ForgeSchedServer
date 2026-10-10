@@ -5,48 +5,55 @@
 
 ## 启动配置
 
-生产模式需在共享配置中设置 `worker.pjtest_config`，或显式传入
-`--pjtest-config`；演示必须显式 `--demo`，且拒绝业务 payload。
+生产模式直接读取共享配置；演示必须显式 `--demo`，且拒绝业务 payload。
 Server、CLI、Worker 共用 `config/forgesched.conf`。多机部署时可用
 `FORGESCHED_CONFIG` 指向每台机器自己的配置副本：
 `server.bind_ip` 是监听地址，`network.server_ip` 是 Client/Worker 连接地址，
 `server.port` 为同一个端口。默认只监听本机；不要在无认证/TLS 的情况下开放公网。
-Worker 的 `worker.output_dir`、`worker.galaxcore_root`、`worker.test2_root`、
-`worker.artifact_root` 和 `worker.pjtest_config` 路径在该配置中集中指定；
+Worker 的 `worker.output_dir`、`worker.slots_root` 和
+`worker.artifact_root` 路径在该配置中集中指定；
 相对路径均相对于进程启动目录。
+
+工作机配置例子（从 ForgeSched 仓库根目录启动）：
+
+```ini
+network.server_ip=192.168.10.20
+server.port=18080
+worker.output_dir=./worker-output
+worker.slots_root=./worker/workers_slots
+worker.svn_url=http://192.168.10.10/svn/galaxcore/galaxcore
+worker.svn_revision=
+worker.artifact_root=/共享目录/构建包
+worker.clean=true
+worker.terminate_grace_seconds=30
+# flow_config 由 Server 模板下发，工作机无需设置 worker.flow.*
+```
+
+`flow_config` 由服务端 `server.templates_dir` 中的同名 JSON 模板确定。
+普通 CLI 提交 `--flow route` 时，Server 读取 `route.json`，把内容快照
+写进任务 payload；Worker 严格按该快照覆盖 slot 的 test2/flow_config，
+运行结束后恢复原文件。修改模板只影响新任务。Server 与 Worker 需一起更新；
+旧版 Server 的 v1 payload 会被新版生产 Worker 拒绝。Worker ID 为
+`pjtest-slot-1` 时，首次启动会 checkout 整个 SVN 仓库到
+`worker/workers_slots/pjtest-slot-1/galaxcore`；再次启动复用该副本。
+需要更新副本时由操作员在停机后检查并执行 SVN 更新，Worker 不会自动
+覆盖已有副本。SVN 若需要认证，须预先配置工作机账号的 SVN 凭据。
 
 ```sh
 python3 worker/forge_worker.py --worker-id pjtest-slot-1
 ./build/bin/forgesched_client submit --target xcvu9p --revision 58231 --case cases/smoke/run.tcl --flow route --case-timeout 600
 ```
 
-```json
-{
-  "test2_root": "/local/inputs/test2",
-  "artifact_root": "/local/artifacts",
-  "log_root": "/local/worker-runs",
-  "flow_profiles": {
-    "route": {"route_design": 1, "write_bitstream": 0, "bit_cmp": 0, "msk_cmp": 0, "bgn_cmp": 0}
-  },
-  "environment": {
-    "PATH": "/opt/vivado/bin:/usr/local/bin:/usr/bin:/bin",
-    "LD_LIBRARY_PATH": "/local/required-libraries"
-  },
-  "clean": true,
-  "terminate_grace_seconds": 30
-}
-```
-
-配置中的路径优先于本地 JSON 的同名目录字段；后者保留供直接调用 Adapter 的
-离线测试使用。路径、环境与 flow 需由内网操作员核验。不会自动 source .cshrc。
-`--output` 可临时覆盖 Worker 输出目录。旧 lock_root 不再控制保护范围：
+无需单独编写 PJtest JSON 配置。`--pjtest-config` 仅保留给旧版离线夹具。
+环境变量由启动 Worker 的 shell 继承；不会自动 source .cshrc。
+`--output` 可临时覆盖 Worker 输出目录。对规范化输入目录本身加内核 flock：
 对规范化输入目录本身加内核 flock，锁与 Worker 名称无关。
 target 当前是业务标签，不隐式改变 case/器件/flow。
 
-真实工作机优先设置 `worker.galaxcore_root` 为该 slot 的完整 GalaxCore SVN
-工作副本根目录（其下必须有 `.svn`、`test2/run.sh` 和
-`test2/flow_config`）。没有副本时可另设 `worker.svn_url` 和可选的
-`worker.svn_revision`，首次启动 checkout 整个仓库；已有但不完整的目录
+每个 slot 是完整 GalaxCore SVN 工作副本（其下有 `.svn` 和
+`test2/run.sh`）。原 PJTest 允许 checkout 后暂时没有
+`test2/flow_config`；Worker 会按 Server 下发的配置生成该文件，并在安全清理后
+恢复原状。已有但不完整的目录
 不会被自动覆盖或删除。每个 Worker 进程仍只有一个 slot，多 slot 应使用各自
 独立的副本、worker ID 与输出目录。输出目录不能放进该副本。
 
@@ -63,10 +70,10 @@ ZIP 与所填 revision 的真实对应关系，须由内网发布流程核对。
 服务端对相同 worker、状态、结果摘要作幂等确认。若服务端重启丢失了内存
 任务，重放会被拒绝并保留文件，需要人工核查，**没有自动恢复**。
 
-以下“必须有 manifest、私有 workspace、ZIP flow”规则仅适用于未配置
-`galaxcore_root` 的旧离线模式，不能用作真实工作机部署要求。
+以下“必须有 manifest、私有 workspace、ZIP flow”规则仅适用于
+`--pjtest-config` 指定 `test2_root` 的旧离线模式，不能用作真实工作机部署要求。
 
-## 构建发布契约
+## 旧离线模式的构建发布契约
 
 不再接受裸 ZIP。每个 revision 必须只有一个候选：
 GalaxCore_REV.zip、Galaxcore_REV.zip、GalaxCore_rREV.zip、GalaxCore-REV.zip。
@@ -141,7 +148,7 @@ Worker 断开。Server 可能继续保持 RUNNING 和 slot 占用，后续任务
 
 ```sh
 ctest --test-dir build --output-on-failure
-ctest --test-dir build -R 'test_python_worker|test_pjtest_adapter|test_worker_safety' --output-on-failure
+ctest --test-dir build -R 'test_python_worker|test_pjtest_adapter|test_worker_safety|test_server_flow|test_clock' --output-on-failure
 ```
 
 tests/test_worker_safety.cpp 调用 Python 夹具，覆盖隔离、锁、哈希/清单/ZIP、

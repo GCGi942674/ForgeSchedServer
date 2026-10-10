@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import socket
@@ -19,6 +20,27 @@ from pjtest_adapter import PJtestAdapter
 from runtime_config import load_config
 
 MAX_FRAME = 1024 * 1024
+_SLOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+
+
+def shared_pjtest_settings(config, worker_id, output):
+    """Translate the common config into one dedicated SVN-backed slot."""
+    artifact = config.get("worker.artifact_root", "")
+    if not artifact:
+        return None
+    if not _SLOT_ID.fullmatch(worker_id):
+        raise ValueError("PJtest worker-id must be 1-64 letters, digits, _ or -")
+    slots_root = Path(config.get("worker.slots_root") or "./worker/workers_slots").expanduser().resolve()
+    slot = slots_root / worker_id / "galaxcore"
+    grace = float(config.get("worker.terminate_grace_seconds") or "30")
+    clean_value = config.get("worker.clean") or "true"
+    if clean_value not in ("true", "false"):
+        raise ValueError("worker.clean must be true or false")
+    return dict(galaxcore_root=str(slot), svn_url=config.get("worker.svn_url", ""),
+                svn_revision=config.get("worker.svn_revision") or None,
+                artifact_root=artifact, log_root=str(output), flow_profiles={},
+                require_server_flow=True,
+                clean=clean_value == "true", terminate_grace_seconds=grace)
 
 
 class Worker:
@@ -214,22 +236,23 @@ def main():
     args = parser.parse_args()
     try:
         config = load_config()
-        explicit_config = args.pjtest_config is not None
         explicit_output = args.output is not None
         args.host = args.host or config["network.server_ip"]
         args.port = args.port if args.port is not None else int(config["server.port"])
         args.output = args.output or Path(config["worker.output_dir"])
-        args.pjtest_config = args.pjtest_config or (
-            Path(config["worker.pjtest_config"]) if config.get("worker.pjtest_config") else None)
+        explicit_config = args.pjtest_config is not None
+        if not explicit_config and not args.demo:
+            args.pjtest_config = shared_pjtest_settings(config, args.worker_id, args.output)
         args.pjtest_paths = {}
-        if config.get("worker.test2_root"):
-            args.pjtest_paths["test2_root"] = config["worker.test2_root"]
-        for key in ("galaxcore_root", "svn_url", "svn_revision"):
-            if config.get("worker." + key):
-                args.pjtest_paths[key] = config["worker." + key]
-        if config.get("worker.artifact_root"):
-            args.pjtest_paths["artifact_root"] = config["worker.artifact_root"]
-        if explicit_output or not explicit_config:
+        if explicit_config:
+            if config.get("worker.test2_root"):
+                args.pjtest_paths["test2_root"] = config["worker.test2_root"]
+            for key in ("galaxcore_root", "svn_url", "svn_revision"):
+                if config.get("worker." + key):
+                    args.pjtest_paths[key] = config["worker." + key]
+            if config.get("worker.artifact_root"):
+                args.pjtest_paths["artifact_root"] = config["worker.artifact_root"]
+        if explicit_output and explicit_config:
             args.pjtest_paths["log_root"] = str(args.output)
     except (OSError, ValueError, KeyError) as error:
         parser.error("invalid shared config: " + str(error))

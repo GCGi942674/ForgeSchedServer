@@ -5,6 +5,7 @@ enum class ConnectionRole { UNKNOWN, CLIENT, WORKER };
 
 constexpr bool isClientRequest(MessageType type) {
     return type == MessageType::SUBMIT_TASK || type == MessageType::QUERY_TASK ||
+           type == MessageType::QUERY_STATUS ||
            type == MessageType::CANCEL_TASK;
 }
 constexpr bool isWorkerRequest(MessageType type) {

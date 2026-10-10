@@ -1,8 +1,9 @@
 # Python Worker：真实进程最小闭环
 
 这是 Linux / WSL 的单 slot 演示执行器，Python 3.6+，仅依赖标准库。
-同一个 Worker 也可通过 `--pjtest-config` 或共享配置中的
-`worker.pjtest_config` 进入 PJtest 模式；演示模式必须显式选择。
+同一个 Worker 在共享配置中设置 SVN 地址和构建包目录后
+自动进入 PJtest 模式；演示模式必须显式选择。部署步骤见
+`docs/pjtest-adapter.md`。
 
 ```bash
 python3 worker/forge_worker.py --worker-id demo-1 --demo
@@ -22,7 +23,8 @@ stderr.log、result.json。Server 查询提供任务状态和受限的执行摘�
 
 先等待 TASK_START 成功再启动进程；运行期间发送心跳；超时杀死进程组并回收；
 SIGINT/SIGTERM 或连接错误同样清理子进程。结果响应和下一次派发允许交错。
-断线不自动重连、不重放任务；未确认结果需人工核对，Server 暂无恢复机制。
+断线不自动重连、不重放任务；已执行但未确认的结果会落盘并在同一 Worker ID
+下次启动时重报。Server 重启丢失任务状态后仍需人工核对。
 
 重要限制：
 - 暂不支持远程取消。Server 已强制拒绝 ASSIGNED/RUNNING 的取消请求，
@@ -30,4 +32,4 @@ SIGINT/SIGTERM 或连接错误同样清理子进程。结果响应和下一次�
 - 退出或断线后，Server 可能保留 ASSIGNED/RUNNING；暂无 Worker lost recovery。
 - 无认证/TLS，只在可信网络使用；worker-id 不得与其他在线 Worker 重复。
 - 固定演示输出很小；接真实执行器前还需日志限额、资源隔离和取消协议。
-- 本阶段不加入 SQLite、缓存、Vivado 或 PJtest。
+- 当前仍需内网真实 GalaxCore/Vivado 验收。

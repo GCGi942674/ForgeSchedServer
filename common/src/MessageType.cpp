@@ -7,6 +7,7 @@ std::string toString(MessageType type) {
     switch (type) {
         case MessageType::SUBMIT_TASK:    return "submit_task";
         case MessageType::QUERY_TASK:     return "query_task";
+        case MessageType::QUERY_STATUS:   return "query_status";
         case MessageType::CANCEL_TASK:    return "cancel_task";
         case MessageType::WORKER_REGISTER: return "worker_register";
         case MessageType::WORKER_HEARTBEAT: return "worker_heartbeat";
@@ -22,6 +23,7 @@ MessageType messageTypeFromString(const std::string& value) {
     static const std::unordered_map<std::string, MessageType> type_map = {
         {"submit_task", MessageType::SUBMIT_TASK},
         {"query_task", MessageType::QUERY_TASK},
+        {"query_status", MessageType::QUERY_STATUS},
         {"cancel_task", MessageType::CANCEL_TASK},
         {"worker_register", MessageType::WORKER_REGISTER},
         {"worker_heartbeat", MessageType::WORKER_HEARTBEAT},

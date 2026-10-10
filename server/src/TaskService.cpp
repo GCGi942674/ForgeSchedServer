@@ -4,8 +4,11 @@
 #include "task/TaskStatus.h"
 #include "task/TaskLimits.h"
 #include "task/RegressionPayload.h"
+#include "config/Config.h"
 #include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
+#include <filesystem>
+#include <fstream>
 
 namespace ForgeSched {
 
@@ -27,6 +30,25 @@ std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) 
         return std::nullopt;
     }
     if (!validRegressionPayload(request.payload)) return std::nullopt;
+    nlohmann::json payload = request.payload;
+    if (!payload.empty() && payload["spec_version"] == 1) {
+        const auto directory = Config::instance().getString("server.templates_dir", "");
+        if (!directory.empty()) {
+            const std::filesystem::path file =
+                std::filesystem::path(directory) / (payload["flow"].get<std::string>() + ".json");
+            std::ifstream stream(file);
+            if (!stream) {
+                LOG_WARN(LogModule::TASK, "Missing server flow template: " + file.string());
+                return std::nullopt;
+            }
+            const auto source = nlohmann::json::parse(stream, nullptr, false);
+            if (!source.is_object() || !source.contains("flow_config") ||
+                !validFlowConfig(source["flow_config"])) return std::nullopt;
+            payload["spec_version"] = 2;
+            payload["flow_config"] = source["flow_config"];
+            if (!validRegressionPayload(payload)) return std::nullopt;
+        }
+    }
     if (request.type == TaskType::UNKNOWN) {
         LOG_WARN(LogModule::TASK, "Invalid create request: unknown task type");
         return std::nullopt;
@@ -51,7 +73,7 @@ std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) 
 
     Task task(id, request.type, request.target, request.revision);
     task.setPriority(request.priority);
-    task.setPayload(request.payload);
+    task.setPayload(std::move(payload));
 
     if (!scheduler_.submitTask(std::move(task))) {
         LOG_ERROR(LogModule::TASK, "Generated task could not be submitted to Scheduler");

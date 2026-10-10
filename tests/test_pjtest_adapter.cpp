@@ -1,4 +1,5 @@
 #include "ControlTestSupport.h"
+#include "config/Config.h"
 #include <filesystem>
 #include <fstream>
 #include <fcntl.h>
@@ -31,6 +32,18 @@ int main(int argc, char** argv) { return testMain([&] {
     char path[] = "/tmp/forgesched-pjtest-XXXXXX"; CHECK(::mkdtemp(path));
     struct Cleanup { const char* path; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); } } cleanup{path};
     invoke({argv[1], argv[4], path}); // fixture prints JSON below
+    { const auto settings = std::filesystem::path(path) / "worker.json";
+      std::ifstream input(settings); nlohmann::json worker_config; input >> worker_config;
+      worker_config["flow_profiles"] = nlohmann::json::object();
+      worker_config["require_server_flow"] = true;
+      std::ofstream output(settings); output << worker_config.dump(); }
+    const auto templates = std::filesystem::path(path) / "templates";
+    std::filesystem::create_directories(templates);
+    { std::ofstream file(templates / "route.json");
+      file << R"({"flow_config":{"original":1,"route_design":1}})"; }
+    { std::ofstream file(std::filesystem::path(path) / "server.conf");
+      file << "server.templates_dir=" << templates.string() << "\n"; }
+    CHECK(ForgeSched::Config::instance().load(std::string(path) + "/server.conf"));
     ControlTestServer host;
     auto client = connectTo(host.port);
     const auto tasks_before = host.worker.getScheduler().getTasks().size();
@@ -72,6 +85,8 @@ int main(int argc, char** argv) { return testMain([&] {
         });
         auto query = invoke({cli, "--port", port, "query", std::to_string(id)});
         CHECK(query["result"]["payload"]["case"] == std::string("cases/")+mode+"/run.tcl");
+        CHECK(query["result"]["payload"]["spec_version"] == 2);
+        CHECK(query["result"]["payload"]["flow_config"]["route_design"] == 1);
         CHECK(query["result"]["status"] == final);
         if (std::string(mode) == "missing_artifact")
             CHECK(query["result"]["execution"]["reason"].get<std::string>().find(
