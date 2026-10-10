@@ -54,7 +54,7 @@ void Buffer::ensureWritableBytes(size_t len) {
   }
 }
 
-char *Buffer::begin() { return this->buffer_.data(); };
+char *Buffer::begin() { return this->buffer_.data(); }
 
 const char *Buffer::begin() const { return this->buffer_.data(); }
 
