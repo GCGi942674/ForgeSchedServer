@@ -15,6 +15,7 @@ import struct
 import sys
 import tempfile
 import time
+import uuid
 
 try:
     import yaml
@@ -29,6 +30,10 @@ ZIP_NAME = re.compile(r"Galax[Cc]ore_(\d+)\.zip\Z")
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 SAFE_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
 TERMINAL = {"SUCCEEDED", "FAILED", "TIMEOUT", "CANCELLED"}
+
+
+class BatchStopped(RuntimeError):
+    pass
 
 
 def required_path(config, key):
@@ -206,6 +211,8 @@ def request(config, kind, data):
             reply.get("request_id") != 1 or not isinstance(reply.get("data"), dict)):
         raise ValueError("invalid ForgeSched response")
     result = reply["data"]
+    if result.get("code") == 3 and result.get("message") == "batch stopped":
+        raise BatchStopped("batch stopped")
     if result.get("code") != 0:
         raise RuntimeError("{} rejected: {}".format(kind, result.get("message")))
     return result.get("result")
@@ -255,26 +262,39 @@ def run(config, dry_run=False, check_only=False, interval=30):
             return 0
         previous = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else None
         if previous:
-            if previous.get("phase") != "complete" or previous.get("uncertain"):
+            if previous.get("phase") not in ("complete", "stopped") or previous.get("uncertain"):
                 raise RuntimeError("previous submission uncertain; inspect " + str(state_path))
             for task_id in previous.get("task_ids", []):
                 task = request(config, "query_task", {"task_id": task_id})
                 if task["status"] not in TERMINAL:
                     raise RuntimeError("previous task is unfinished: {}".format(task_id))
             if previous.get("day") == date.today().isoformat():
-                print("SKIPPED: suite already submitted today")
+                print("SKIPPED: suite {} today".format(
+                    "stopped" if previous.get("phase") == "stopped" else "already submitted"))
                 return 0
         revision, archive, plan = build_plan(config)
+        batch_id = date.today().isoformat() + "-" + revision + "-" + uuid.uuid4().hex
+        for entry in plan:
+            entry["payload"]["context"]["batch_id"] = batch_id
         protect = required_path(config, "server.protect_versions_file")
         atomic_text(protect, revision + "\n")
         state = {"day": date.today().isoformat(), "revision": revision,
-                 "archive": str(archive), "phase": "submitting",
+                 "archive": str(archive), "batch_id": batch_id, "phase": "submitting",
                  "task_ids": [], "uncertain": False, "planned": len(plan)}
         atomic_text(state_path, json.dumps(state, sort_keys=True))
+        print("BATCH: " + batch_id, flush=True)
         for index, entry in enumerate(plan, 1):
             state["uncertain"] = True
             atomic_text(state_path, json.dumps(state, sort_keys=True))
-            answer = request(config, "submit_task", entry)
+            try:
+                answer = request(config, "submit_task", entry)
+            except BatchStopped:
+                state["uncertain"] = False
+                state["phase"] = "stopped"
+                atomic_text(state_path, json.dumps(state, sort_keys=True))
+                print("STOPPED: batch {} accepted {}/{} cases".format(
+                    batch_id, len(state["task_ids"]), len(plan)), flush=True)
+                return 0
             task_id = answer["task_id"]
             state["task_ids"].append(task_id)
             state["uncertain"] = False

@@ -94,6 +94,30 @@ class ClockTests(unittest.TestCase):
                 clock.run(self.config, interval=0)
         self.assertTrue(json.loads((self.root / "state.json").read_text())["uncertain"])
 
+    def test_stop_during_submission_records_known_tasks(self):
+        self.yaml.write_text(yaml.safe_dump({"tasks": [
+            {"template": "route", "target": str(self.runlist)},
+            {"template": "route", "target": str(self.runlist)}]}))
+        submitted = []
+        def reply(_, kind, data):
+            if kind == "query_status":
+                return {"pending": 0, "queued": 0, "assigned": 0, "running": 0, "total": 0}
+            if kind == "query_task":
+                return {"status": "SUCCEEDED"}
+            submitted.append(data["payload"]["context"]["batch_id"])
+            if len(submitted) == 2:
+                raise clock.BatchStopped("batch stopped")
+            return {"task_id": 101}
+        with mock.patch.object(clock, "request", side_effect=reply):
+            self.assertEqual(clock.run(self.config, interval=0), 0)
+            self.assertEqual(clock.run(self.config, interval=0), 0)
+        state = json.loads((self.root / "state.json").read_text())
+        self.assertEqual(state["phase"], "stopped")
+        self.assertFalse(state["uncertain"])
+        self.assertEqual(state["task_ids"], [101])
+        self.assertEqual(state["batch_id"], submitted[0])
+        self.assertEqual(submitted, [submitted[0], submitted[0]])
+
 
 if __name__ == "__main__":
     unittest.main()

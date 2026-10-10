@@ -22,8 +22,9 @@ void usage() {
               << "  submit --target TARGET --revision REV [--priority -100..100]\n"
               << "         [--case PATH/run.tcl --flow PROFILE --case-timeout SEC]\n"
               << "  query TASK_ID\n  cancel TASK_ID\n"
+              << "  query-batch BATCH_ID\n  cancel-batch BATCH_ID\n"
               << "One JSON response on stdout; exit 0=OK, 2=server error, 1=transport/protocol error, 64=usage.\n"
-              << "No automatic retries. Cancel is local state cancellation, not remote process termination.\n";
+              << "No automatic retries. Batch cancel stops queued cases; in-flight cases finish.\n";
 }
 }
 int main(int argc, char** argv) {
@@ -77,14 +78,20 @@ int main(int argc, char** argv) {
                      {"priority", priority}, {"payload", {{"spec_version", 1},
                         {"case", case_path}, {"flow", flow}, {"timeout_seconds", case_timeout}}}});
             } else response = client.submit(target, revision, priority);
-        } else if (command == "query" || command == "cancel") {
+        } else if (command == "query" || command == "cancel" ||
+                   command == "query-batch" || command == "cancel-batch") {
             if (seen.count("--target") || seen.count("--revision") || seen.count("--priority") ||
                 seen.count("--case") || seen.count("--flow") || seen.count("--case-timeout"))
                 throw UsageError("submit options are not allowed for query/cancel");
-            auto task_id = number<uint64_t>(id);
-            if (!task_id) throw UsageError("task id must be positive");
-            response = command == "query" ? client.query(task_id) : client.cancel(task_id);
-        } else throw UsageError("expected submit, query or cancel (see --help)");
+            if (command == "query-batch" || command == "cancel-batch") {
+                if (id.empty() || id.size() > 128) throw UsageError("invalid batch id");
+                response = command == "query-batch" ? client.queryBatch(id) : client.cancelBatch(id);
+            } else {
+                auto task_id = number<uint64_t>(id);
+                if (!task_id) throw UsageError("task id must be positive");
+                response = command == "query" ? client.query(task_id) : client.cancel(task_id);
+            }
+        } else throw UsageError("expected submit, query, cancel, query-batch or cancel-batch (see --help)");
         std::cout << response.data.dump() << '\n';
         return response.data["code"] == 0 ? 0 : 2;
     } catch (const UsageError& e) {

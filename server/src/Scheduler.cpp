@@ -5,6 +5,30 @@
 #include <type_traits>
 
 namespace ForgeSched {
+namespace {
+const std::string* batchId(const Task& task) {
+    const auto& payload = task.getPayload();
+    if (!payload.is_object() || !payload.contains("context") ||
+        !payload["context"].is_object()) return nullptr;
+    const auto& context = payload["context"];
+    if (!context.contains("batch_id") || !context["batch_id"].is_string()) return nullptr;
+    return &context["batch_id"].get_ref<const std::string&>();
+}
+
+void countStatus(BatchSnapshot& snapshot, TaskStatus status) {
+    ++snapshot.total;
+    switch (status) {
+        case TaskStatus::PENDING: ++snapshot.pending; break;
+        case TaskStatus::QUEUED: ++snapshot.queued; break;
+        case TaskStatus::ASSIGNED: ++snapshot.assigned; break;
+        case TaskStatus::RUNNING: ++snapshot.running; break;
+        case TaskStatus::SUCCEEDED: ++snapshot.succeeded; break;
+        case TaskStatus::FAILED: ++snapshot.failed; break;
+        case TaskStatus::TIMEOUT: ++snapshot.timeout; break;
+        case TaskStatus::CANCELLED: ++snapshot.cancelled; break;
+    }
+}
+}
 
 Scheduler::Scheduler(WorkerManager& worker_manager)
     : worker_manager_(worker_manager)
@@ -24,6 +48,9 @@ bool Scheduler::submitTask(Task task) {
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+
+    const auto batch = batchId(task);
+    if (batch && stopped_batches_.count(*batch)) return false;
 
     if (tasks_.find(task.getId()) != tasks_.end()) {
         LOG_WARN(LogModule::SCHEDULER, "Duplicate TaskId: " + std::to_string(task.getId()));
@@ -215,6 +242,46 @@ bool Scheduler::cancelTask(TaskId task_id) {
     }
 }
 
+std::optional<BatchSnapshot> Scheduler::queryBatch(const std::string& batch_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    BatchSnapshot snapshot;
+    snapshot.stop_requested = stopped_batches_.count(batch_id) != 0;
+    for (const auto& entry : tasks_)
+        if (const auto id = batchId(entry.second); id && *id == batch_id)
+            countStatus(snapshot, entry.second.getStatus());
+    if (!snapshot.total) return std::nullopt;
+    return snapshot;
+}
+
+std::optional<BatchSnapshot> Scheduler::cancelBatch(const std::string& batch_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    bool found = false;
+    for (const auto& entry : tasks_)
+        if (const auto id = batchId(entry.second); id && *id == batch_id) {
+            found = true; break;
+        }
+    if (!found) return std::nullopt;
+    stopped_batches_.insert(batch_id); // Allocate before changing any task state.
+    BatchSnapshot snapshot;
+    snapshot.stop_requested = true;
+    for (auto& entry : tasks_) {
+        auto& task = entry.second;
+        const auto id = batchId(task);
+        if (!id || *id != batch_id) continue;
+        if (task.getStatus() == TaskStatus::PENDING || task.getStatus() == TaskStatus::QUEUED) {
+            task.transitionTo(TaskStatus::CANCELLED);
+            ++snapshot.cancelled_now;
+        }
+        countStatus(snapshot, task.getStatus());
+    }
+    return snapshot;
+}
+
+bool Scheduler::isBatchStopped(const std::string& batch_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return stopped_batches_.count(batch_id) != 0;
+}
+
 std::optional<Task> Scheduler::getTask(TaskId id) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -318,6 +385,10 @@ bool Scheduler::rollbackAssignment(TaskId task_id) {
     }
 
     task.clearWorkerId();
+
+    const auto batch = batchId(task);
+    if (batch && stopped_batches_.count(*batch))
+        return task.transitionTo(TaskStatus::CANCELLED);
 
     if (!task.transitionTo(TaskStatus::QUEUED)) {
         LOG_ERROR(LogModule::SCHEDULER, "Task transition ASSIGNED -> QUEUED failed for task=" + std::to_string(task_id));

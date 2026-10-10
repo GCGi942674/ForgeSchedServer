@@ -4,11 +4,29 @@
 #include "task/TaskService.h"
 #include "task/TaskStatus.h"
 #include "task/TaskType.h"
+#include "task/RegressionPayload.h"
 #include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
 #include <chrono>
 
 namespace {
+nlohmann::json batchResult(const std::string& id, const ForgeSched::BatchSnapshot& s) {
+    return {{"batch_id", id}, {"stop_requested", s.stop_requested},
+            {"cancelled_now", s.cancelled_now}, {"total", s.total},
+            {"pending", s.pending}, {"queued", s.queued},
+            {"assigned", s.assigned}, {"running", s.running},
+            {"in_flight", s.assigned + s.running},
+            {"succeeded", s.succeeded}, {"failed", s.failed},
+            {"timeout", s.timeout}, {"cancelled", s.cancelled},
+            {"finished", s.succeeded + s.failed + s.timeout},
+            {"complete", s.pending + s.queued + s.assigned + s.running == 0}};
+}
+bool batchRequest(const nlohmann::json& data) {
+    return data.is_object() && data.size() == 1 && data.contains("batch_id") &&
+           data["batch_id"].is_string() &&
+           !data["batch_id"].get<std::string>().empty() &&
+           data["batch_id"].get<std::string>().size() <= 128;
+}
 nlohmann::json executionSummary(const std::string& message, ForgeSched::TaskStatus status) noexcept {
     if (message.empty() || message.size() > 8192) return nullptr;
     try {
@@ -95,6 +113,11 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
 
             auto result = task_service_.createTask(create_req);
             if (!result) {
+                if (validRegressionPayload(create_req.payload) &&
+                    create_req.payload.contains("context") &&
+                    create_req.payload["context"].contains("batch_id") &&
+                    scheduler_.isBatchStopped(create_req.payload["context"]["batch_id"].get<std::string>()))
+                    return buildResponse(request, ResponseCode::INVALID_STATE, "batch stopped");
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid task parameters");
             }
 
@@ -152,6 +175,20 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             }
 
             return buildResponse(request, ResponseCode::OK, "ok");
+        }
+
+        case ForgeSched::Protocol::MessageType::QUERY_BATCH:
+        case ForgeSched::Protocol::MessageType::CANCEL_BATCH: {
+            if (!batchRequest(request.data))
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid batch id");
+            const auto id = request.data["batch_id"].get<std::string>();
+            const auto snapshot = request.type == MessageType::QUERY_BATCH ?
+                scheduler_.queryBatch(id) : scheduler_.cancelBatch(id);
+            if (!snapshot)
+                return buildResponse(request, ResponseCode::NOT_FOUND, "batch not found");
+            if (request.type == MessageType::CANCEL_BATCH)
+                scheduling_driver_.requestSchedule();
+            return buildResponse(request, ResponseCode::OK, "ok", batchResult(id, *snapshot));
         }
 
         case ForgeSched::Protocol::MessageType::WORKER_REGISTER: {

@@ -31,3 +31,5 @@ dry-run 成功、Worker 在线、Server 无未完成任务以及磁盘容量足�
 避免重复执行。Server 当前不持久化任务；Server 重启后无法从旧任务 ID
 自动恢复日任务，必须人工处理，不能直接删除时钟状态文件来绕过。
 当前强制 `max_retry=0`，不支持旧 PJTest 的失败重试语义。
+批次运行中可用 `forgesched_client cancel-batch BATCH_ID` 停止剩余 case；
+运行中的 case 会正常完成，详见 `docs/batch-stop.md`。

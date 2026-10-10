@@ -10,6 +10,8 @@ enum class MessageType {
     QUERY_TASK,
     QUERY_STATUS,
     CANCEL_TASK,
+    QUERY_BATCH,
+    CANCEL_BATCH,
 
     WORKER_REGISTER,
     WORKER_HEARTBEAT,

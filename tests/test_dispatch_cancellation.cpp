@@ -67,4 +67,34 @@ int main() { return testMain([] {
             CHECK(workers.getWorker("w")->getUsedSlots() == 1);
         }
     }
+    for (bool delivery_accepted : {false, true}) {
+        WorkerManager workers; CHECK(workers.registerWorker("w", "host", 1));
+        Scheduler scheduler(workers); Dispatcher dispatcher;
+        SchedulingCoordinator coordinator(scheduler, dispatcher);
+        Task task(1, TaskType::REGRESSION, "case", "r");
+        task.setPayload({{"context", {{"batch_id", "batch-race"}}}});
+        CHECK(scheduler.submitTask(std::move(task)));
+        std::mutex mutex; std::condition_variable cv;
+        bool entered = false, release = false;
+        dispatcher.action = [&](const Task&) {
+            std::unique_lock<std::mutex> lock(mutex);
+            entered = true; cv.notify_all();
+            cv.wait(lock, [&] { return release; });
+            return delivery_accepted;
+        };
+        std::thread thread([&] { coordinator.runOnce(); });
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            cv.wait(lock, [&] { return entered; });
+        }
+        auto stopped = scheduler.cancelBatch("batch-race");
+        CHECK(stopped && stopped->assigned == 1 && stopped->cancelled_now == 0);
+        {
+            std::lock_guard<std::mutex> lock(mutex); release = true;
+        }
+        cv.notify_all(); thread.join();
+        CHECK(scheduler.getTask(1)->getStatus() ==
+              (delivery_accepted ? TaskStatus::ASSIGNED : TaskStatus::CANCELLED));
+        CHECK(workers.getWorker("w")->getUsedSlots() == (delivery_accepted ? 1u : 0u));
+    }
 }); }

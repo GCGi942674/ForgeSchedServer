@@ -107,4 +107,10 @@ Protocol::ProtocolMessage ForgeClient::query(uint64_t id) {
 Protocol::ProtocolMessage ForgeClient::cancel(uint64_t id) {
     return request(Protocol::MessageType::CANCEL_TASK, {{"task_id", id}});
 }
+Protocol::ProtocolMessage ForgeClient::queryBatch(const std::string& id) {
+    return request(Protocol::MessageType::QUERY_BATCH, {{"batch_id", id}});
+}
+Protocol::ProtocolMessage ForgeClient::cancelBatch(const std::string& id) {
+    return request(Protocol::MessageType::CANCEL_BATCH, {{"batch_id", id}});
+}
 } // namespace ForgeSched

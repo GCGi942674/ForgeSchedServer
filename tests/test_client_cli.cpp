@@ -1,4 +1,5 @@
 #include "ControlTestSupport.h"
+#include "ForgeClient.h"
 #include <spawn.h>
 #include <poll.h>
 #include <fcntl.h>
@@ -79,6 +80,19 @@ int main(int argc, char** argv) { return testMain([&] {
     CHECK(nlohmann::json::parse(invoke({"query", std::to_string(id)}).output)["result"]["status"] == "CANCELLED");
     CHECK(invoke({"cancel", std::to_string(id)}).code == 2);
     CHECK(invoke({"query", "999999"}).code == 2);
+    ForgeSched::ForgeClient api("127.0.0.1", host.port);
+    auto batch_submit = api.request(ForgeSched::Protocol::MessageType::SUBMIT_TASK,
+        {{"task_type", "REGRESSION"}, {"target", "cli batch"}, {"revision", "18925"},
+         {"payload", {{"spec_version", 2}, {"case", "cases/one/run.tcl"},
+                      {"flow", "route"}, {"timeout_seconds", 600},
+                      {"flow_config", {{"route_design", 1}}},
+                      {"context", {{"batch_id", "cli-batch"}}}}}});
+    CHECK(batch_submit.data["code"] == 0);
+    CHECK(nlohmann::json::parse(invoke({"query-batch", "cli-batch"}).output)["result"]["queued"] == 1);
+    auto batch_cancelled = invoke({"cancel-batch", "cli-batch"});
+    CHECK(batch_cancelled.code == 0);
+    CHECK(nlohmann::json::parse(batch_cancelled.output)["result"]["cancelled_now"] == 1);
+    CHECK(invoke({"query-batch", "unknown-batch"}).code == 2);
     // The executable itself participates in the complete network execution flow.
     auto worker = connectTo(host.port);
     response(worker.value, envelope("worker_register", {{"worker_id", "cli-worker"}, {"hostname", "h"}, {"slots", 1u}}), true);

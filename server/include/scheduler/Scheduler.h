@@ -22,6 +22,13 @@ struct TaskAssignment {
     WorkerId worker_id;
 };
 
+struct BatchSnapshot {
+    bool stop_requested{false};
+    size_t total{0}, pending{0}, queued{0}, assigned{0}, running{0};
+    size_t succeeded{0}, failed{0}, timeout{0}, cancelled{0};
+    size_t cancelled_now{0};
+};
+
 class Scheduler {
 public:
     explicit Scheduler(WorkerManager& worker_manager);
@@ -31,6 +38,9 @@ public:
     bool completeTask(TaskId task_id, TaskStatus final_status,
                       nlohmann::json execution_summary = nullptr);
     bool cancelTask(TaskId task_id);
+    std::optional<BatchSnapshot> queryBatch(const std::string& batch_id) const;
+    std::optional<BatchSnapshot> cancelBatch(const std::string& batch_id);
+    bool isBatchStopped(const std::string& batch_id) const;
 
     bool markTaskStarted(TaskId task_id, const WorkerId& worker_id);
     bool rollbackAssignment(TaskId task_id);
@@ -69,6 +79,7 @@ private:
     };
     TaskQueue task_queue_;
     std::unordered_set<TaskId> dispatching_;
+    std::unordered_set<std::string> stopped_batches_;
     uint64_t next_sequence_;
     mutable std::mutex mutex_;
 

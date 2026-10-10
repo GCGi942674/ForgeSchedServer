@@ -29,7 +29,7 @@ add_test(NAME test_control_plane COMMAND test_control_plane)
 set_tests_properties(test_control_plane PROPERTIES TIMEOUT 45)
 
 add_executable(test_client_cli test_client_cli.cpp)
-target_link_libraries(test_client_cli PRIVATE forgesched_server_core)
+target_link_libraries(test_client_cli PRIVATE forgesched_server_core forgesched_client_api)
 add_dependencies(test_client_cli forgesched_client)
 add_test(NAME test_client_cli COMMAND test_client_cli $<TARGET_FILE:forgesched_client>)
 set_tests_properties(test_client_cli PROPERTIES TIMEOUT 45)
@@ -62,6 +62,11 @@ add_executable(test_server_flow test_server_flow.cpp)
 target_link_libraries(test_server_flow PRIVATE forgesched_server_core)
 add_test(NAME test_server_flow COMMAND test_server_flow)
 set_tests_properties(test_server_flow PROPERTIES TIMEOUT 45)
+
+add_executable(test_batch_cancel test_batch_cancel.cpp)
+target_link_libraries(test_batch_cancel PRIVATE forgesched_server_core forgesched_client_api)
+add_test(NAME test_batch_cancel COMMAND test_batch_cancel)
+set_tests_properties(test_batch_cancel PROPERTIES TIMEOUT 45)
 
 add_test(NAME test_clock COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_clock.py)
