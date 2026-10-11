@@ -8,6 +8,9 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <deque>
+#include <optional>
 #include <string>
 
 class Connection : public std::enable_shared_from_this<Connection> {
@@ -63,6 +66,11 @@ public:
   bool shouldCloseAfterWrite() const;
   void incPendingTasks();
   void decPendingTasks();
+  // Protocol messages are drained in wire order on a business worker thread.
+  // 1 starts a drain, 0 joins one, -1 rejects an over-limit queue.
+  int enqueueProtocolMessage(const std::string& message);
+  std::optional<std::string> nextProtocolMessage();
+  size_t abandonProtocolMessages();
   bool hasPendingTasks() const;
   bool canBeClosed() const;
 
@@ -80,6 +88,10 @@ private:
   Buffer outputBuffer_;
 
   std::atomic<int> pending_tasks_{0};
+  std::mutex protocol_mutex_;
+  std::deque<std::string> protocol_messages_;
+  size_t protocol_bytes_{0};
+  bool protocol_active_{false};
 
   std::atomic<uint64_t> last_active_ms_{0};
 

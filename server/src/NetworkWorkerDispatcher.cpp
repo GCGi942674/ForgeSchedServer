@@ -29,6 +29,7 @@ Protocol::ProtocolMessage NetworkWorkerDispatcher::buildTaskAssignMessage(const 
 
     Protocol::DTO::TaskAssignRequest assign_dto;
     assign_dto.task_id = task.getId();
+    assign_dto.run_id = task.getRunId();
     assign_dto.task_type = task.getType();
     assign_dto.target = task.getTarget();
     assign_dto.revision = task.getRevision();

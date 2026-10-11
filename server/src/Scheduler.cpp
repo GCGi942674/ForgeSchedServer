@@ -2,7 +2,11 @@
 #include "task/TaskStatus.h"
 #include "Logging.h"
 #include "worker/WorkerDispatcher.h"
+#include "persistence/StateStore.h"
 #include <type_traits>
+#include <random>
+#include <sstream>
+#include <limits>
 
 namespace ForgeSched {
 namespace {
@@ -36,40 +40,185 @@ Scheduler::Scheduler(WorkerManager& worker_manager)
 {
 }
 
+void Scheduler::holdWorker(const WorkerId& worker_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    reconciling_workers_.insert(worker_id);
+}
+
+void Scheduler::releaseRecoveryHold(const WorkerId& worker_id) {
+    for (const auto& entry : tasks_) {
+        const auto& task = entry.second;
+        if (task.getWorkerId() == worker_id &&
+            (task.getStatus() == TaskStatus::ASSIGNED || task.getStatus() == TaskStatus::RUNNING))
+            return;
+    }
+    quarantined_workers_.erase(worker_id);
+}
+
+// Caller holds mutex_. A lost attempt is retried only after the Worker proves
+// its execution tree is gone, or if START permission was never committed.
+std::string Scheduler::recoverLost(Task& task, int max_retries) {
+    if (!store_ || task.getRunId().empty())
+        throw std::runtime_error("durable recovery requires persistence");
+    const auto worker_id = task.getWorkerId();
+    const bool recovered = task.recoveryRequired();
+    const bool running = task.getStatus() == TaskStatus::RUNNING;
+    const auto batch = batchId(task);
+    const bool stopped = batch && stopped_batches_.count(*batch);
+    const bool retry = !stopped && (!running || task.getRetryCount() < max_retries);
+    const auto status = stopped ? TaskStatus::CANCELLED : retry ? TaskStatus::QUEUED : TaskStatus::FAILED;
+    const std::string action = stopped ? "cancelled" : retry ? "requeued" : "failed";
+    Task prepared = task;
+    prepared.restore(status, retry || stopped ? "" : worker_id,
+                     task.getRetryCount() + (retry && running ? 1 : 0), task.getPayload(),
+                     {{"reason", "worker_lost"}}, retry ? next_sequence_ : task.getQueueSequence(),
+                     task.getRunId(), false, task.getCreatedAt(), task.getStartedAt(),
+                     retry ? std::chrono::system_clock::time_point{} : std::chrono::system_clock::now());
+    if (retry) task_queue_.reserve(tasks_.size() + 1);
+    store_->save({prepared}, std::nullopt, "FAILED", std::nullopt,
+                 std::make_pair(worker_id, action));
+    task = std::move(prepared);
+    if (!recovered) worker_manager_.releaseSlot(worker_id);
+    if (retry) task_queue_.push({task.getId(), task.getPriority(), next_sequence_++});
+    return action;
+}
+
+nlohmann::json Scheduler::recoverWorker(const WorkerId& worker_id, const std::string& state,
+        TaskId task_id, const std::string& run_id, int max_retries) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (max_retries < 0 || max_retries > 100) throw std::runtime_error("invalid recovery retry limit");
+    if (state == "idle") {
+        for (auto& entry : tasks_) {
+            auto& task = entry.second;
+            if (task.getWorkerId() != worker_id) continue;
+            if (task.getStatus() == TaskStatus::RUNNING)
+                return {{"action", "quarantined"}, {"task_id", task.getId()}, {"run_id", task.getRunId()}};
+            if (task.getStatus() == TaskStatus::ASSIGNED) {
+                if (dispatching_.count(task.getId())) return {{"action", "quarantined"}};
+                recoverLost(task, max_retries);
+            }
+        }
+        releaseRecoveryHold(worker_id);
+        reconciling_workers_.erase(worker_id);
+        return {{"action", "ready"}};
+    }
+    if (state == "lost" && store_) {
+        if (auto prior = store_->recoveryDecision(run_id, task_id, worker_id))
+            return {{"action", *prior}};
+    }
+    auto it = tasks_.find(task_id);
+    if (it == tasks_.end() || it->second.getWorkerId() != worker_id ||
+        it->second.getRunId() != run_id ||
+        (it->second.getStatus() != TaskStatus::ASSIGNED && it->second.getStatus() != TaskStatus::RUNNING))
+        return {{"action", "rejected"}};
+    if (state == "active") {
+        reconciling_workers_.erase(worker_id);
+        return {{"action", "resume"}};
+    }
+    if (state != "lost" || dispatching_.count(task_id)) return {{"action", "rejected"}};
+    reconciling_workers_.insert(worker_id);
+    return {{"action", recoverLost(it->second, max_retries)}};
+}
+
+void Scheduler::restoreFrom(StateStore& store) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!tasks_.empty() || store_) throw std::runtime_error("scheduler already initialized");
+    auto loaded = store.loadTasks();
+    auto stopped = store.loadStoppedBatches();
+    TaskQueue queue;
+    queue.reserve(loaded.size());
+    for (const auto& entry : loaded) {
+        if (entry.task.getStatus() == TaskStatus::QUEUED)
+            queue.push({entry.task.getId(), entry.task.getPriority(), entry.queue_sequence});
+        if (entry.task.recoveryRequired()) quarantined_workers_.insert(entry.task.getWorkerId());
+        next_sequence_ = std::max(next_sequence_, entry.queue_sequence + 1);
+        tasks_.emplace(entry.task.getId(), entry.task);
+    }
+    for (const auto& id : stopped) stopped_batches_.insert(id);
+    task_queue_.swap(queue);
+    store_ = &store;
+}
+
+TaskId Scheduler::nextTaskId() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    TaskId maximum = 0;
+    for (const auto& entry : tasks_) maximum = std::max(maximum, entry.first);
+    if (maximum == std::numeric_limits<int64_t>::max())
+        throw std::runtime_error("task id exhausted");
+    return maximum + 1;
+}
+
+static std::string newRunId(TaskId id) {
+    std::random_device source;
+    std::ostringstream result;
+    result << std::hex << id << '-' << source() << source() << source() << source();
+    return result.str();
+}
+
 bool Scheduler::submitTask(Task task) {
+    return submitTask(std::move(task), "", "").has_value();
+}
+
+std::optional<TaskId> Scheduler::findSubmittedTask(const std::string& submission_key,
+                                                   const std::string& request_json) const {
+    if (submission_key.empty()) return std::nullopt;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!store_) return std::nullopt;
+    auto prior = store_->findSubmission(submission_key);
+    if (prior && prior->second == request_json) return prior->first;
+    return std::nullopt;
+}
+
+std::optional<TaskId> Scheduler::submitTask(Task task, const std::string& submission_key,
+                                            const std::string& request_json) {
     if (task.getId() == 0) {
         LOG_WARN(LogModule::SCHEDULER, "Cannot submit task with zero TaskId");
-        return false;
+        return std::nullopt;
     }
 
     if (task.getStatus() != TaskStatus::PENDING) {
         LOG_WARN(LogModule::SCHEDULER, "Cannot submit task not in PENDING state");
-        return false;
+        return std::nullopt;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    if (store_ && !submission_key.empty()) {
+        auto prior = store_->findSubmission(submission_key);
+        if (prior) return prior->second == request_json ?
+            std::optional<TaskId>(prior->first) : std::nullopt;
+    }
+
     const auto batch = batchId(task);
-    if (batch && stopped_batches_.count(*batch)) return false;
+    if (batch && stopped_batches_.count(*batch)) return std::nullopt;
 
     if (tasks_.find(task.getId()) != tasks_.end()) {
         LOG_WARN(LogModule::SCHEDULER, "Duplicate TaskId: " + std::to_string(task.getId()));
-        return false;
+        return std::nullopt;
     }
 
     if (!task.transitionTo(TaskStatus::QUEUED)) {
         LOG_ERROR(LogModule::SCHEDULER, "Task transition PENDING -> QUEUED failed");
-        return false;
+        return std::nullopt;
     }
 
     // Reserve before changing task ownership; rollback can then requeue without allocation.
     task_queue_.reserve(tasks_.size() + 1);
     const auto id = task.getId();
     const auto priority = task.getPriority();
-    tasks_.emplace(id, std::move(task));
+    task.setQueueSequence(next_sequence_);
+    auto inserted = tasks_.emplace(id, std::move(task));
+    try {
+        if (store_) store_->save({inserted.first->second}, std::nullopt, std::nullopt,
+                                submission_key.empty() ? std::nullopt :
+                                std::make_optional(std::make_pair(submission_key, request_json)));
+    } catch (...) {
+        tasks_.erase(id);
+        throw;
+    }
     task_queue_.push({id, priority, next_sequence_++});
 
-    return true;
+    return id;
 }
 
 std::vector<TaskAssignment> Scheduler::schedule() {
@@ -82,6 +231,7 @@ std::vector<TaskAssignment> Scheduler::schedule() {
     assignments.reserve(pending.size());
     changes.reserve(pending.size());
     size_t acquired = 0;
+    std::string selected_after = last_selected_worker_;
     static_assert(std::is_nothrow_move_assignable<Task>::value, "task commit must not throw");
     try {
         while (!pending.empty()) {
@@ -93,15 +243,27 @@ std::vector<TaskAssignment> Scheduler::schedule() {
             }
             auto workers = worker_manager_.getAvailableWorkers();
             if (workers.empty()) break;
-            const Worker* selected = &workers.front();
+            const Worker* selected = nullptr;
             for (const auto& worker : workers) {
-                if (worker.freeSlots() > selected->freeSlots() ||
-                    (worker.freeSlots() == selected->freeSlots() && worker.getId() < selected->getId()))
+                if (quarantined_workers_.count(worker.getId()) ||
+                    reconciling_workers_.count(worker.getId())) continue;
+                if (!selected || worker.freeSlots() > selected->freeSlots()) {
                     selected = &worker;
+                } else if (worker.freeSlots() == selected->freeSlots()) {
+                    const bool candidate_after = worker.getId() > selected_after;
+                    const bool selected_is_after = selected->getId() > selected_after;
+                    if ((candidate_after && !selected_is_after) ||
+                        (candidate_after == selected_is_after && worker.getId() < selected->getId()))
+                        selected = &worker;
+                }
             }
+            if (!selected) break;
             const auto worker_id = selected->getId();
             Task prepared = it->second;
+            prepared.restore(TaskStatus::QUEUED, "", prepared.getRetryCount(), prepared.getPayload(),
+                             nullptr, prepared.getQueueSequence(), "", false, prepared.getCreatedAt(), {}, {});
             prepared.setWorkerId(worker_id);
+            if (store_) prepared.setRunId(newRunId(prepared.getId()));
             prepared.transitionTo(TaskStatus::ASSIGNED);
             changes.emplace_back(&it->second, std::move(prepared));
             assignments.push_back({queued.task_id, worker_id});
@@ -111,6 +273,7 @@ std::vector<TaskAssignment> Scheduler::schedule() {
                 break;
             }
             ++acquired;
+            selected_after = worker_id;
             pending.pop();
         }
     } catch (...) {
@@ -119,9 +282,22 @@ std::vector<TaskAssignment> Scheduler::schedule() {
             worker_manager_.releaseSlot(assignments[i].worker_id);
         throw;
     }
+    try {
+        if (store_ && !changes.empty()) {
+            std::vector<Task> persisted;
+            persisted.reserve(changes.size());
+            for (const auto& change : changes) persisted.push_back(change.second);
+            store_->save(persisted);
+        }
+    } catch (...) {
+        for (size_t i = 0; i < acquired; ++i)
+            worker_manager_.releaseSlot(assignments[i].worker_id);
+        throw;
+    }
     // All potentially allocating work is complete. No logging after commit.
     for (auto& change : changes) *change.first = std::move(change.second);
     task_queue_.swap(pending);
+    last_selected_worker_.swap(selected_after);
     return assignments;
 }
 
@@ -181,10 +357,16 @@ bool Scheduler::completeTask(TaskId task_id, TaskStatus final_status,
         LOG_ERROR(LogModule::SCHEDULER, "Task transition RUNNING -> " + toString(final_status) + " failed for task=" + std::to_string(task_id));
         return false;
     }
-    task.setExecutionSummary(execution_summary);
-    task.transitionTo(final_status);
+    Task prepared = task;
+    prepared.setExecutionSummary(execution_summary);
+    prepared.transitionTo(final_status);
+    prepared.setRecoveryRequired(false);
+    if (store_) store_->save({prepared});
+    const bool recovered = task.recoveryRequired();
+    task = std::move(prepared);
+    releaseRecoveryHold(task.getWorkerId());
 
-    if (!worker_manager_.releaseSlot(task.getWorkerId())) {
+    if (!recovered && !worker_manager_.releaseSlot(task.getWorkerId())) {
         LOG_ERROR(LogModule::SCHEDULER, "Worker slot release failed after task completion for task=" + std::to_string(task_id));
         return false;
     }
@@ -208,6 +390,11 @@ bool Scheduler::cancelTask(TaskId task_id) {
 
     switch (task.getStatus()) {
         case TaskStatus::QUEUED: {
+            if (store_) {
+                Task prepared = task;
+                prepared.transitionTo(TaskStatus::CANCELLED);
+                store_->save({prepared});
+            }
             if (!task.transitionTo(TaskStatus::CANCELLED)) {
                 LOG_ERROR(LogModule::SCHEDULER, "Task transition QUEUED -> CANCELLED failed for task=" + std::to_string(task_id));
                 return false;
@@ -222,6 +409,11 @@ bool Scheduler::cancelTask(TaskId task_id) {
             return false;
 
         case TaskStatus::PENDING:
+            if (store_) {
+                Task prepared = task;
+                prepared.transitionTo(TaskStatus::CANCELLED);
+                store_->save({prepared});
+            }
             if (!task.transitionTo(TaskStatus::CANCELLED)) {
                 LOG_ERROR(LogModule::SCHEDULER, "Task transition PENDING -> CANCELLED failed for task=" + std::to_string(task_id));
                 return false;
@@ -261,7 +453,25 @@ std::optional<BatchSnapshot> Scheduler::cancelBatch(const std::string& batch_id)
             found = true; break;
         }
     if (!found) return std::nullopt;
+    std::vector<Task> changed;
+    changed.reserve(tasks_.size());
+    for (const auto& entry : tasks_) {
+        const auto id = batchId(entry.second);
+        if (!id || *id != batch_id) continue;
+        if (entry.second.getStatus() == TaskStatus::PENDING ||
+            entry.second.getStatus() == TaskStatus::QUEUED) {
+            Task prepared = entry.second;
+            prepared.transitionTo(TaskStatus::CANCELLED);
+            changed.push_back(std::move(prepared));
+        }
+    }
+    const bool already_stopped = stopped_batches_.count(batch_id) != 0;
     stopped_batches_.insert(batch_id); // Allocate before changing any task state.
+    try { if (store_) store_->save(changed, batch_id); }
+    catch (...) {
+        if (!already_stopped) stopped_batches_.erase(batch_id);
+        throw;
+    }
     BatchSnapshot snapshot;
     snapshot.stop_requested = true;
     for (auto& entry : tasks_) {
@@ -347,10 +557,13 @@ bool Scheduler::markTaskStarted(TaskId task_id, const WorkerId& worker_id) {
         return false;
     }
 
-    if (!task.transitionTo(TaskStatus::RUNNING)) {
+    Task prepared = task;
+    if (!prepared.transitionTo(TaskStatus::RUNNING)) {
         LOG_ERROR(LogModule::SCHEDULER, "Task transition ASSIGNED -> RUNNING failed for task=" + std::to_string(task_id));
         return false;
     }
+    if (store_) store_->save({prepared});
+    task = std::move(prepared);
 
     LOG_INFO(LogModule::TASK, "task=" + std::to_string(task_id) + " started");
 
@@ -379,23 +592,35 @@ bool Scheduler::rollbackAssignment(TaskId task_id) {
         return false;
     }
 
-    if (!worker_manager_.releaseSlot(task.getWorkerId())) {
-        LOG_ERROR(LogModule::SCHEDULER, "Worker slot release failed during rollback for task=" + std::to_string(task_id));
-        return false;
+    if (!store_) {
+        if (!worker_manager_.releaseSlot(task.getWorkerId())) return false;
+        task.clearWorkerId();
+        const auto batch = batchId(task);
+        if (batch && stopped_batches_.count(*batch))
+            return task.transitionTo(TaskStatus::CANCELLED);
+        if (!task.transitionTo(TaskStatus::QUEUED)) return false;
+        task.setQueueSequence(next_sequence_);
+        task_queue_.push({task.getId(), task.getPriority(), next_sequence_++});
+        return true;
     }
 
-    task.clearWorkerId();
-
+    Task prepared = task;
+    prepared.clearWorkerId();
     const auto batch = batchId(task);
-    if (batch && stopped_batches_.count(*batch))
-        return task.transitionTo(TaskStatus::CANCELLED);
-
-    if (!task.transitionTo(TaskStatus::QUEUED)) {
+    const bool stopped = batch && stopped_batches_.count(*batch);
+    if (!prepared.transitionTo(stopped ? TaskStatus::CANCELLED : TaskStatus::QUEUED)) {
         LOG_ERROR(LogModule::SCHEDULER, "Task transition ASSIGNED -> QUEUED failed for task=" + std::to_string(task_id));
         return false;
     }
-
-    task_queue_.push({task.getId(), task.getPriority(), next_sequence_++});
+    if (!stopped) {
+        task_queue_.reserve(tasks_.size() + 1);
+        prepared.setQueueSequence(next_sequence_);
+    }
+    if (store_) store_->save({prepared}, std::nullopt, "DISPATCH_FAILED");
+    if (!worker_manager_.releaseSlot(task.getWorkerId()))
+        throw std::runtime_error("slot release failed after persisted dispatch rollback");
+    task = std::move(prepared);
+    if (!stopped) task_queue_.push({task.getId(), task.getPriority(), next_sequence_++});
 
     // No allocating diagnostics after the state change.
 

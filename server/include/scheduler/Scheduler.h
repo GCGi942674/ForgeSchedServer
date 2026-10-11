@@ -16,6 +16,7 @@
 
 namespace ForgeSched {
 class WorkerDispatcher;
+class StateStore;
 
 struct TaskAssignment {
     TaskId task_id;
@@ -32,8 +33,17 @@ struct BatchSnapshot {
 class Scheduler {
 public:
     explicit Scheduler(WorkerManager& worker_manager);
+    void restoreFrom(StateStore& store);
+    TaskId nextTaskId() const;
+    void holdWorker(const WorkerId& worker_id);
+    nlohmann::json recoverWorker(const WorkerId& worker_id, const std::string& state,
+                                 TaskId task_id, const std::string& run_id, int max_retries);
 
     bool submitTask(Task task);
+    std::optional<TaskId> submitTask(Task task, const std::string& submission_key,
+                                     const std::string& request_json);
+    std::optional<TaskId> findSubmittedTask(const std::string& submission_key,
+                                            const std::string& request_json) const;
     std::vector<TaskAssignment> schedule();
     bool completeTask(TaskId task_id, TaskStatus final_status,
                       nlohmann::json execution_summary = nullptr);
@@ -80,10 +90,16 @@ private:
     TaskQueue task_queue_;
     std::unordered_set<TaskId> dispatching_;
     std::unordered_set<std::string> stopped_batches_;
+    std::unordered_set<std::string> quarantined_workers_;
+    std::unordered_set<std::string> reconciling_workers_;
+    StateStore* store_{nullptr};
     uint64_t next_sequence_;
+    std::string last_selected_worker_;
     mutable std::mutex mutex_;
 
     bool isValidFinalStatus(TaskStatus status) const;
+    std::string recoverLost(Task& task, int max_retries);
+    void releaseRecoveryHold(const WorkerId& worker_id);
 
 };
 

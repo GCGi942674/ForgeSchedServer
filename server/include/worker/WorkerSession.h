@@ -55,6 +55,7 @@ private:
     std::weak_ptr<Connection> connection_weak_;
 
     std::optional<WorkerId> worker_id_;
+    bool recovery_protocol_{false};
     std::optional<WorkerConnectionRegistry::HandleId> binding_handle_;
 
     WorkerManager& worker_manager_;

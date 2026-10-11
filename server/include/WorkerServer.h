@@ -12,14 +12,17 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <thread>
+#include <condition_variable>
 #include "worker/WorkerSession.h"
 #include "ConnectionSession.h"
+#include "persistence/StateStore.h"
 
 namespace ForgeSched {
 
 class WorkerServer {
 public:
-    WorkerServer();
+    explicit WorkerServer(bool persistent = false);
 
     ~WorkerServer();
     // Call before transport.run(); this object must outlive the transport.
@@ -33,6 +36,7 @@ public:
     Protocol::ProtocolRouter& getRouter() { return *router_ptr_; }
 
 private:
+    std::unique_ptr<StateStore> store_ptr_;
     std::unique_ptr<WorkerManager> worker_manager_ptr_;
     std::unique_ptr<WorkerConnectionRegistry> registry_ptr_;
     std::unique_ptr<NetworkWorkerDispatcher> dispatcher_ptr_;
@@ -43,6 +47,10 @@ private:
     std::unique_ptr<Protocol::ProtocolRouter> router_ptr_;
     std::mutex session_mutex_;
     std::unordered_map<Connection*, std::unique_ptr<ConnectionSession>> sessions_;
+    std::thread liveness_thread_;
+    std::mutex liveness_mutex_;
+    std::condition_variable liveness_cv_;
+    bool stopping_{false};
 };
 
 } // namespace ForgeSched

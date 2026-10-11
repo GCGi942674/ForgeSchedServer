@@ -8,6 +8,7 @@
 #include "scheduler/SchedulingDriver.h"
 #include "Logging.h"
 #include <chrono>
+#include "config/Config.h"
 
 namespace {
 nlohmann::json batchResult(const std::string& id, const ForgeSched::BatchSnapshot& s) {
@@ -89,6 +90,7 @@ ResponseCode ProtocolRouter::toErrorCode(TaskStatus status) const {
 }
 
 ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
+    try {
     if (request.type == ForgeSched::Protocol::MessageType::RESPONSE) {
         LOG_WARN(LogModule::NETWORK, "Received RESPONSE as incoming request");
         return buildResponse(request, ResponseCode::INVALID_REQUEST, "unexpected response message");
@@ -110,6 +112,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             create_req.revision = submit_req.revision;
             create_req.priority = submit_req.priority;
             create_req.payload = submit_req.payload;
+            create_req.submission_key = submit_req.submission_key;
 
             auto result = task_service_.createTask(create_req);
             if (!result) {
@@ -154,9 +157,26 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                     default: break;
                 }
             }
+            nlohmann::json machines = nlohmann::json::object();
+            nlohmann::json workers = nlohmann::json::array();
+            for (const auto& worker : worker_manager_.getWorkers()) {
+                workers.push_back({{"worker_id", worker.getId()},
+                    {"machine_id", worker.getMachineId()}, {"slot_id", worker.getSlotId()},
+                    {"status", toString(worker.getStatus())},
+                    {"capacity", worker.getTotalSlots()}, {"used", worker.getUsedSlots()}});
+                const auto machine = worker.getMachineId();
+                if (!machines.contains(machine)) machines[machine] =
+                    {{"slots", 0}, {"online", 0}, {"running", 0}};
+                machines[machine]["slots"] = machines[machine]["slots"].get<int>() + 1;
+                machines[machine]["online"] = machines[machine]["online"].get<int>() +
+                    (worker.getStatus() == WorkerStatus::ONLINE ? 1 : 0);
+                machines[machine]["running"] = machines[machine]["running"].get<int>() +
+                    static_cast<int>(worker.getUsedSlots());
+            }
             return buildResponse(request, ResponseCode::OK, "ok",
                                  {{"queued", queued}, {"assigned", assigned},
-                                  {"running", running}, {"pending", pending}, {"total", total}});
+                                  {"running", running}, {"pending", pending}, {"total", total},
+                                  {"workers", workers}, {"machines", machines}});
         }
 
         case ForgeSched::Protocol::MessageType::CANCEL_TASK: {
@@ -187,7 +207,10 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!snapshot)
                 return buildResponse(request, ResponseCode::NOT_FOUND, "batch not found");
             if (request.type == MessageType::CANCEL_BATCH)
-                scheduling_driver_.requestSchedule();
+                try { scheduling_driver_.requestSchedule(); }
+                catch (const std::exception& error) {
+                    LOG_ERROR(LogModule::SCHEDULER, std::string("scheduling delayed: ") + error.what());
+                }
             return buildResponse(request, ResponseCode::OK, "ok", batchResult(id, *snapshot));
         }
 
@@ -200,12 +223,46 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             bool success = worker_manager_.registerWorker(
                 register_req.worker_id,
                 register_req.hostname,
-                register_req.slots
+                register_req.slots, register_req.machine_id, register_req.slot_id
             );
             if (!success) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid worker registration");
             }
 
+            return buildResponse(request, ResponseCode::OK, "ok");
+        }
+
+        case MessageType::WORKER_RECOVER: {
+            const auto& d = request.data;
+            if (!d.is_object() || !d.contains("worker_id") || !d["worker_id"].is_string() ||
+                !d.contains("state") || !d["state"].is_string())
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid recovery request");
+            const auto state = d["state"].get<std::string>();
+            TaskId task_id = 0;
+            std::string run_id;
+            if (state != "idle") {
+                if ((state != "active" && state != "lost") || !d.contains("task_id") ||
+                    !d["task_id"].is_number_unsigned() || d["task_id"].get<TaskId>() == 0 ||
+                    !d.contains("run_id") || !d["run_id"].is_string() ||
+                    d["run_id"].get<std::string>().empty() || d["run_id"].get<std::string>().size() > 128)
+                    return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid recovery identity");
+                task_id = d["task_id"].get<TaskId>();
+                run_id = d["run_id"].get<std::string>();
+            }
+            auto result = scheduler_.recoverWorker(d["worker_id"].get<std::string>(), state,
+                task_id, run_id, Config::instance().getInt("server.recovery_max_retries", 1));
+            if (result["action"] == "ready") scheduling_driver_.requestSchedule();
+            return buildResponse(request, ResponseCode::OK, "ok", result);
+        }
+
+        case MessageType::WORKER_DRAIN: {
+            const auto& data = request.data;
+            if (!data.is_object() || data.size() != 1 ||
+                !data.contains("worker_id") || !data["worker_id"].is_string() ||
+                data["worker_id"].get<std::string>().empty())
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid drain request");
+            if (!worker_manager_.markDraining(data["worker_id"].get<std::string>()))
+                return buildResponse(request, ResponseCode::NOT_FOUND, "worker not found");
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
@@ -219,7 +276,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!success) {
                 return buildResponse(request, ResponseCode::NOT_FOUND, "worker not found");
             }
-
+            scheduling_driver_.requestSchedule();
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
@@ -233,6 +290,13 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!task) {
                 return buildResponse(request, ResponseCode::NOT_FOUND, "task not found");
             }
+
+            if (task->getRunId() != start_req.run_id)
+                return buildResponse(request, ResponseCode::INVALID_STATE, "run id mismatch");
+            if (task->getWorkerId() != start_req.worker_id)
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, "worker_id mismatch");
+            if (!task->getRunId().empty() && task->getStatus() == TaskStatus::RUNNING)
+                return buildResponse(request, ResponseCode::OK, "ok");
 
             if (task->getStatus() != TaskStatus::ASSIGNED) {
                 LOG_WARN(LogModule::NETWORK, "TASK_START rejected: task not in ASSIGNED state");
@@ -269,13 +333,16 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::NOT_FOUND, "task not found");
             }
 
+            if (task->getRunId() != result_req.run_id)
+                return buildResponse(request, ResponseCode::INVALID_STATE, "run id mismatch");
+
             if (task->getWorkerId() != result_req.worker_id) {
                 LOG_ERROR(LogModule::NETWORK, "TASK_RESULT rejected: worker_id mismatch");
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "worker_id mismatch");
             }
 
             auto summary = executionSummary(result_req.message, result_req.status);
-            if (!summary.is_null() && task->getStatus() == result_req.status &&
+            if (task->getStatus() == result_req.status &&
                 task->getExecutionSummary() == summary) {
                 return buildResponse(request, ResponseCode::OK, "ok");
             }
@@ -288,13 +355,20 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::INTERNAL_ERROR, "failed to complete task");
             }
 
-            scheduling_driver_.requestSchedule();
+            try { scheduling_driver_.requestSchedule(); }
+            catch (const std::exception& error) {
+                LOG_ERROR(LogModule::SCHEDULER, std::string("scheduling delayed: ") + error.what());
+            }
 
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
         default:
             return buildResponse(request, ResponseCode::INVALID_REQUEST, "unknown message type");
+    }
+    } catch (const std::exception& error) {
+        LOG_ERROR(LogModule::SERVER, std::string("request persistence failure: ") + error.what());
+        return buildResponse(request, ResponseCode::INTERNAL_ERROR, "server state unavailable");
     }
 }
 
@@ -326,6 +400,18 @@ nlohmann::json ProtocolRouter::taskToJson(const Task& task) const {
     j["target"] = task.getTarget();
     j["revision"] = task.getRevision();
     j["worker_id"] = task.getWorkerId();
+    if (!task.getRunId().empty()) j["run_id"] = task.getRunId();
+    if (task.recoveryRequired()) {
+        j["recovery_required"] = true;
+        j["recovery_reason"] = "server_restart_pending_reconciliation";
+    }
+    if (task.getStatus() == TaskStatus::ASSIGNED || task.getStatus() == TaskStatus::RUNNING) {
+        const auto worker = worker_manager_.getWorker(task.getWorkerId());
+        if (!worker || worker->getStatus() == WorkerStatus::OFFLINE) {
+            j["recovery_required"] = true;
+            j["recovery_reason"] = "worker_offline";
+        }
+    }
     j["priority"] = task.getPriority();
     j["payload"] = task.getPayload();
     if (!task.getExecutionSummary().is_null()) j["execution"] = task.getExecutionSummary();

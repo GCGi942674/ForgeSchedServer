@@ -7,6 +7,7 @@ std::string toString(WorkerStatus status) {
     switch (status) {
         case WorkerStatus::ONLINE:  return "ONLINE";
         case WorkerStatus::OFFLINE: return "OFFLINE";
+        case WorkerStatus::DRAINING: return "DRAINING";
         default:                    return "UNKNOWN";
     }
 }
@@ -35,7 +36,7 @@ bool Worker::hasFreeSlot() const {
 
 void Worker::updateHeartbeat() {
     last_heartbeat_ = std::chrono::system_clock::now();
-    status_ = WorkerStatus::ONLINE;
+    if (status_ != WorkerStatus::DRAINING) status_ = WorkerStatus::ONLINE;
 }
 
 bool Worker::acquireSlot() {

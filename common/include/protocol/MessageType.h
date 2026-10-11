@@ -15,6 +15,8 @@ enum class MessageType {
 
     WORKER_REGISTER,
     WORKER_HEARTBEAT,
+    WORKER_RECOVER,
+    WORKER_DRAIN,
 
     TASK_ASSIGN,
     TASK_START,

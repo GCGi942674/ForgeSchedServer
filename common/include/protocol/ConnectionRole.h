@@ -11,6 +11,8 @@ constexpr bool isClientRequest(MessageType type) {
 }
 constexpr bool isWorkerRequest(MessageType type) {
     return type == MessageType::WORKER_REGISTER || type == MessageType::WORKER_HEARTBEAT ||
+           type == MessageType::WORKER_RECOVER ||
+           type == MessageType::WORKER_DRAIN ||
            type == MessageType::TASK_START || type == MessageType::TASK_RESULT;
 }
 // Single inbound permission policy. Roles are protocol separation, not authentication.

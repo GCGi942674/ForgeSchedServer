@@ -252,16 +252,18 @@ def run(config, dry_run=False, check_only=False, interval=30):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("another clock invocation is running")
+        previous = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else None
+        plan_path = state_path.with_name(state_path.name + ".plan.json")
+        resume = bool(previous and previous.get("phase") == "submitting")
         status = request(config, "query_status", {})
         active = sum(status[key] for key in ("pending", "queued", "assigned", "running"))
         if check_only:
             print("unfinished={} total={}".format(active, status["total"]))
             return 0
-        if active:
+        if active and not resume:
             print("SKIPPED: {} unfinished tasks".format(active))
             return 0
-        previous = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else None
-        if previous:
+        if previous and not resume:
             if previous.get("phase") not in ("complete", "stopped") or previous.get("uncertain"):
                 raise RuntimeError("previous submission uncertain; inspect " + str(state_path))
             for task_id in previous.get("task_ids", []):
@@ -272,18 +274,34 @@ def run(config, dry_run=False, check_only=False, interval=30):
                 print("SKIPPED: suite {} today".format(
                     "stopped" if previous.get("phase") == "stopped" else "already submitted"))
                 return 0
-        revision, archive, plan = build_plan(config)
-        batch_id = date.today().isoformat() + "-" + revision + "-" + uuid.uuid4().hex
-        for entry in plan:
-            entry["payload"]["context"]["batch_id"] = batch_id
+        if resume:
+            if not plan_path.is_file():
+                raise RuntimeError("missing saved clock plan: " + str(plan_path))
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            state = previous
+            revision = state["revision"]
+            batch_id = state["batch_id"]
+            if (not isinstance(plan, list) or len(plan) != state["planned"] or
+                    any(entry.get("submission_key") != batch_id + ":" + str(index)
+                        for index, entry in enumerate(plan))):
+                raise RuntimeError("saved clock plan does not match state")
+        else:
+            revision, archive, plan = build_plan(config)
+            batch_id = date.today().isoformat() + "-" + revision + "-" + uuid.uuid4().hex
+            for entry in plan:
+                entry["payload"]["context"]["batch_id"] = batch_id
+            for index, entry in enumerate(plan):
+                entry["submission_key"] = batch_id + ":" + str(index)
+            atomic_text(plan_path, json.dumps(plan, sort_keys=True))
+            state = {"day": date.today().isoformat(), "revision": revision,
+                     "archive": str(archive), "batch_id": batch_id, "phase": "submitting",
+                     "task_ids": [], "uncertain": False, "planned": len(plan)}
         protect = required_path(config, "server.protect_versions_file")
         atomic_text(protect, revision + "\n")
-        state = {"day": date.today().isoformat(), "revision": revision,
-                 "archive": str(archive), "batch_id": batch_id, "phase": "submitting",
-                 "task_ids": [], "uncertain": False, "planned": len(plan)}
         atomic_text(state_path, json.dumps(state, sort_keys=True))
         print("BATCH: " + batch_id, flush=True)
-        for index, entry in enumerate(plan, 1):
+        for index in range(len(state["task_ids"]), len(plan)):
+            entry = plan[index]
             state["uncertain"] = True
             atomic_text(state_path, json.dumps(state, sort_keys=True))
             try:
@@ -300,9 +318,9 @@ def run(config, dry_run=False, check_only=False, interval=30):
             state["uncertain"] = False
             atomic_text(state_path, json.dumps(state, sort_keys=True))
             print("[{}/{}] task_id={} template={} case={}".format(
-                index, len(plan), task_id, entry["payload"]["flow"], entry["payload"]["case"]),
+                index + 1, len(plan), task_id, entry["payload"]["flow"], entry["payload"]["case"]),
                 flush=True)
-            if index < len(plan):
+            if index + 1 < len(plan):
                 time.sleep(interval)
         state["phase"] = "complete"
         atomic_text(state_path, json.dumps(state, sort_keys=True))

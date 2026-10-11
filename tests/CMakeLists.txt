@@ -68,6 +68,36 @@ target_link_libraries(test_batch_cancel PRIVATE forgesched_server_core forgesche
 add_test(NAME test_batch_cancel COMMAND test_batch_cancel)
 set_tests_properties(test_batch_cancel PROPERTIES TIMEOUT 45)
 
+add_executable(test_sqlite_persistence test_sqlite_persistence.cpp)
+target_link_libraries(test_sqlite_persistence PRIVATE forgesched_server_core)
+add_test(NAME test_sqlite_persistence COMMAND test_sqlite_persistence)
+set_tests_properties(test_sqlite_persistence PROPERTIES TIMEOUT 45)
+
 add_test(NAME test_clock COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_clock.py)
 set_tests_properties(test_clock PROPERTIES TIMEOUT 45)
+
+add_test(NAME test_sqlite_worker COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_sqlite_worker.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR}/worker/forge_worker.py)
+set_tests_properties(test_sqlite_worker PROPERTIES TIMEOUT 45)
+
+add_executable(test_worker_recovery test_worker_recovery.cpp)
+target_link_libraries(test_worker_recovery PRIVATE forgesched_server_core)
+add_test(NAME test_worker_recovery COMMAND test_worker_recovery)
+set_tests_properties(test_worker_recovery PROPERTIES TIMEOUT 45)
+
+add_test(NAME test_recovery_process COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_recovery_process.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR}/worker/forge_worker.py)
+set_tests_properties(test_recovery_process PROPERTIES TIMEOUT 90)
+
+add_executable(test_worker_distribution test_worker_distribution.cpp)
+target_link_libraries(test_worker_distribution PRIVATE forgesched_server_core)
+add_test(NAME test_worker_distribution COMMAND test_worker_distribution)
+set_tests_properties(test_worker_distribution PROPERTIES TIMEOUT 30)
+
+add_test(NAME test_multislot_process COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_multislot_process.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR}/worker/slot_manager.py)
+set_tests_properties(test_multislot_process PROPERTIES TIMEOUT 120)

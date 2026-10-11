@@ -41,6 +41,25 @@ Task::Task(TaskId id, TaskType type, const std::string& target, const std::strin
 {
 }
 
+void Task::restore(TaskStatus status, std::string worker_id, int retry_count,
+                   nlohmann::json payload, nlohmann::json execution,
+                   uint64_t queue_sequence, std::string run_id, bool recovery_required,
+                   std::chrono::system_clock::time_point created,
+                   std::chrono::system_clock::time_point started,
+                   std::chrono::system_clock::time_point finished) {
+    status_ = status;
+    worker_id_ = std::move(worker_id);
+    retry_count_ = retry_count;
+    payload_ = std::move(payload);
+    execution_summary_ = std::move(execution);
+    queue_sequence_ = queue_sequence;
+    run_id_ = std::move(run_id);
+    recovery_required_ = recovery_required;
+    created_at_ = created;
+    started_at_ = started;
+    finished_at_ = finished;
+}
+
 bool Task::canTransitionTo(TaskStatus next) const {
     switch (status_) {
         case TaskStatus::PENDING:

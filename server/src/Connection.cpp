@@ -241,6 +241,39 @@ void Connection::incPendingTasks() { ++this->pending_tasks_; }
 
 void Connection::decPendingTasks() { --this->pending_tasks_; }
 
+int Connection::enqueueProtocolMessage(const std::string& message) {
+  std::lock_guard<std::mutex> lock(protocol_mutex_);
+  constexpr size_t max_bytes = 4 * 1024 * 1024;
+  if (message.size() > max_bytes - protocol_bytes_ || protocol_messages_.size() >= 512)
+    return -1;
+  protocol_messages_.push_back(message);
+  protocol_bytes_ += message.size();
+  if (protocol_active_) return 0;
+  protocol_active_ = true;
+  return 1;
+}
+
+std::optional<std::string> Connection::nextProtocolMessage() {
+  std::lock_guard<std::mutex> lock(protocol_mutex_);
+  if (protocol_messages_.empty()) {
+    protocol_active_ = false;
+    return std::nullopt;
+  }
+  std::string message = std::move(protocol_messages_.front());
+  protocol_messages_.pop_front();
+  protocol_bytes_ -= message.size();
+  return message;
+}
+
+size_t Connection::abandonProtocolMessages() {
+  std::lock_guard<std::mutex> lock(protocol_mutex_);
+  const auto count = protocol_messages_.size();
+  protocol_messages_.clear();
+  protocol_bytes_ = 0;
+  protocol_active_ = false;
+  return count;
+}
+
 bool Connection::hasPendingTasks() const {
   return this->pending_tasks_.load() > 0;
 }

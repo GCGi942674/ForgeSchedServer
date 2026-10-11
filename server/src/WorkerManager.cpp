@@ -9,7 +9,9 @@ namespace ForgeSched {
 bool WorkerManager::registerWorker(
     const WorkerId& worker_id,
     const std::string& hostname,
-    uint32_t slots
+    uint32_t slots,
+    const std::string& machine_id,
+    const std::string& slot_id
 ) {
     if (worker_id.empty() || worker_id.size() > kMaxWorkerIdBytes ||
         hostname.size() > kMaxWorkerHostnameBytes) {
@@ -22,7 +24,8 @@ bool WorkerManager::registerWorker(
         return false;
     }
 
-    if (slots == 0) {
+    if (slots == 0 || (!machine_id.empty() && machine_id.size() > 64) ||
+        (!slot_id.empty() && slot_id.size() > 64)) {
         LOG_ERROR(LogModule::WORKER, "Invalid worker registration: slots must be > 0");
         return false;
     }
@@ -30,9 +33,19 @@ bool WorkerManager::registerWorker(
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = workers_.find(worker_id);
+    const auto machine = machine_id.empty() ? hostname : machine_id;
+    const auto slot = slot_id.empty() ? worker_id : slot_id;
+    for (const auto& entry : workers_) {
+        if (entry.first != worker_id && entry.second->getMachineId() == machine &&
+            entry.second->getSlotId() == slot) return false;
+    }
     if (it != workers_.end()) {
+        if (it->second->hasExplicitIdentity() &&
+            (it->second->getMachineId() != machine || it->second->getSlotId() != slot))
+            return false;
         // Re-registration: update existing worker
         it->second->hostname_ = hostname;
+        it->second->setIdentity(machine, slot, !machine_id.empty() && !slot_id.empty());
         it->second->setTotalSlots(slots);
         it->second->setOnline();
         it->second->updateHeartbeat();
@@ -42,10 +55,19 @@ bool WorkerManager::registerWorker(
 
     // New registration
     auto worker = std::make_unique<Worker>(worker_id, hostname, slots);
+    worker->setIdentity(machine, slot, !machine_id.empty() && !slot_id.empty());
     worker->setOnline();
     worker->updateHeartbeat();
     workers_[worker_id] = std::move(worker);
     LOG_INFO(LogModule::WORKER, "New worker registered: " + worker_id + " (hostname=" + hostname + ", slots=" + std::to_string(slots) + ")");
+    return true;
+}
+
+bool WorkerManager::markDraining(const WorkerId& worker_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = workers_.find(worker_id);
+    if (it == workers_.end()) return false;
+    it->second->setDraining();
     return true;
 }
 
@@ -66,6 +88,7 @@ bool WorkerManager::heartbeat(const WorkerId& worker_id) {
     }
 
     it->second->updateHeartbeat();
+    // Heartbeats from a draining slot retain DRAINING until its connection closes.
     LOG_DEBUG(LogModule::WORKER, "Worker heartbeat: " + worker_id);
     return true;
 }

@@ -41,11 +41,18 @@ int main(int argc, char** argv) { return testMain([&] {
                 return processId > 0;
             });
             if (mode == 3) CHECK(::kill(child.pid, SIGTERM) == 0);
-            else server.stop();
+            else {
+                server.stop();
+                // P12: loss of the Server must leave the running child alive.
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                CHECK(::kill(child.pid, 0) == 0);
+                CHECK(::kill(processId, 0) == 0);
+                CHECK(::kill(child.pid, SIGTERM) == 0);
+            }
             int status = 0;
             eventually([&] { return ::waitpid(child.pid, &status, WNOHANG) == child.pid; });
             child.pid = -1;
-            CHECK(WIFEXITED(status) && WEXITSTATUS(status) == (mode == 3 ? 0 : 1));
+            CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
             CHECK(::kill(processId, 0) == -1 && errno == ESRCH);
             continue;
         }

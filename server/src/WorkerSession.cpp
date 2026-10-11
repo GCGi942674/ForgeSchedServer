@@ -59,7 +59,14 @@ void WorkerSession::handleRequest(const ProtocolMessage& request) {
         }
         auto conn = getConnection();
         if (!conn || !conn->isConnected()) return;
-        if (!worker_manager_.registerWorker(dto.worker_id, dto.hostname, dto.slots)) {
+        const bool recovering = request.data.contains("recovery_version");
+        if (recovering && (request.data["recovery_version"] != 1 || dto.slots != 1)) {
+            reply(request.request_id, ResponseCode::INVALID_REQUEST, "recovery v1 requires one slot");
+            return;
+        }
+        if (recovering) router_.holdWorker(dto.worker_id);
+        if (!worker_manager_.registerWorker(dto.worker_id, dto.hostname, dto.slots,
+                                            dto.machine_id, dto.slot_id)) {
             reply(request.request_id, ResponseCode::INVALID_REQUEST, "invalid worker registration");
             return;
         }
@@ -69,11 +76,12 @@ void WorkerSession::handleRequest(const ProtocolMessage& request) {
             return;
         }
         worker_id_ = dto.worker_id;
+        recovery_protocol_ = recovering;
         binding_handle_ = *handle;
         LOG_INFO(LogModule::WORKER, "worker registered: " + *worker_id_);
         reply(request.request_id, ResponseCode::OK, "ok");
 
-        scheduling_driver_.requestSchedule();
+        if (!recovering) scheduling_driver_.requestSchedule();
         return;
     }
 
@@ -87,6 +95,10 @@ void WorkerSession::handleRequest(const ProtocolMessage& request) {
     }
     if (!validateWorkerIdentity(request)) {
         reply(request.request_id, ResponseCode::INVALID_REQUEST, "worker identity mismatch");
+        return;
+    }
+    if (request.type == MessageType::WORKER_RECOVER && !recovery_protocol_) {
+        reply(request.request_id, ResponseCode::INVALID_STATE, "register recovery_version first");
         return;
     }
     sendToConnection(encodeResponse(router_.handle(request)));

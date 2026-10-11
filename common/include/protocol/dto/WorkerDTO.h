@@ -11,6 +11,9 @@ namespace ForgeSched::Protocol::DTO {
 struct WorkerRegisterRequest {
     std::string worker_id;
     std::string hostname;
+    std::string machine_id;
+    std::string slot_id;
+    bool explicit_identity{false};
     uint32_t slots{0};
 };
 

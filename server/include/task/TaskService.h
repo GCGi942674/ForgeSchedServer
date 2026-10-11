@@ -18,6 +18,7 @@ struct CreateTaskRequest {
     std::string revision;
     int priority{0};
     nlohmann::json payload = nlohmann::json::object();
+    std::string submission_key;
 };
 
 class SchedulingDriver;
@@ -29,6 +30,7 @@ public:
     std::optional<TaskId> createTask(const CreateTaskRequest& request);
     std::optional<Task> getTask(TaskId id) const;
     bool cancelTask(TaskId id);
+    void setNextTaskId(TaskId next) { id_generator_.setNext(next); }
 
     TaskService(const TaskService&) = delete;
     TaskService& operator=(const TaskService&) = delete;

@@ -24,11 +24,16 @@ TaskService::TaskService(Scheduler& scheduler, SchedulingDriver& scheduling_driv
 }
 
 std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) {
+    const auto fingerprint = nlohmann::json({{"type", toString(request.type)},
+        {"target", request.target}, {"revision", request.revision},
+        {"priority", request.priority}, {"payload", request.payload}}).dump();
     if (request.target.size() > kMaxTaskMetadataBytes ||
         request.revision.size() > kMaxTaskMetadataBytes - request.target.size()) {
         LOG_WARN(LogModule::TASK, "Task metadata exceeds size limit");
         return std::nullopt;
     }
+    if (auto prior = scheduler_.findSubmittedTask(request.submission_key, fingerprint))
+        return prior;
     if (!validRegressionPayload(request.payload)) return std::nullopt;
     nlohmann::json payload = request.payload;
     if (!payload.empty() && payload["spec_version"] == 1) {
@@ -75,16 +80,20 @@ std::optional<TaskId> TaskService::createTask(const CreateTaskRequest& request) 
     task.setPriority(request.priority);
     task.setPayload(std::move(payload));
 
-    if (!scheduler_.submitTask(std::move(task))) {
+    auto accepted = scheduler_.submitTask(std::move(task), request.submission_key, fingerprint);
+    if (!accepted) {
         LOG_ERROR(LogModule::TASK, "Generated task could not be submitted to Scheduler");
         return std::nullopt;
     }
 
     LOG_INFO(LogModule::TASK, "task=" + std::to_string(id) + " created type=" + toString(request.type) + " target=" + request.target + " revision=" + request.revision);
 
-    scheduling_driver_.requestSchedule();
+    try { scheduling_driver_.requestSchedule(); }
+    catch (const std::exception& error) {
+        LOG_ERROR(LogModule::SCHEDULER, std::string("scheduling delayed: ") + error.what());
+    }
 
-    return id;
+    return accepted;
 }
 
 std::optional<Task> TaskService::getTask(TaskId id) const {
@@ -93,7 +102,10 @@ std::optional<Task> TaskService::getTask(TaskId id) const {
 
 bool TaskService::cancelTask(TaskId id) {
     if (scheduler_.cancelTask(id)) {
-        scheduling_driver_.requestSchedule();
+        try { scheduling_driver_.requestSchedule(); }
+        catch (const std::exception& error) {
+            LOG_ERROR(LogModule::SCHEDULER, std::string("scheduling delayed: ") + error.what());
+        }
         return true;
     }
     return false;

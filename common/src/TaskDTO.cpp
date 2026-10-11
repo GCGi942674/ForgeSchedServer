@@ -70,6 +70,12 @@ bool fromJson(const nlohmann::json& j, SubmitTaskRequest& out) {
     }
 
     if (j.contains("payload")) out.payload = j["payload"];
+    if (j.contains("submission_key")) {
+        if (!j["submission_key"].is_string() ||
+            j["submission_key"].get<std::string>().empty() ||
+            j["submission_key"].get<std::string>().size() > 128) return false;
+        out.submission_key = j["submission_key"].get<std::string>();
+    }
     return out.task_type != TaskType::UNKNOWN && validRegressionPayload(out.payload);
 }
 
@@ -80,6 +86,7 @@ nlohmann::json toJson(const SubmitTaskRequest& value) {
     j["revision"] = value.revision;
     j["priority"] = value.priority;
     j["payload"] = value.payload;
+    if (!value.submission_key.empty()) j["submission_key"] = value.submission_key;
     return j;
 }
 
@@ -125,6 +132,11 @@ bool fromJson(const nlohmann::json& j, TaskStartRequest& out) {
     }
     out.worker_id = j["worker_id"].get<std::string>();
 
+    if (j.contains("run_id")) {
+        if (!j["run_id"].is_string()) return false;
+        out.run_id = j["run_id"].get<std::string>();
+    }
+
     return true;
 }
 
@@ -132,6 +144,7 @@ nlohmann::json toJson(const TaskStartRequest& value) {
     nlohmann::json j;
     j["task_id"] = value.task_id;
     j["worker_id"] = value.worker_id;
+    if (!value.run_id.empty()) j["run_id"] = value.run_id;
     return j;
 }
 
@@ -150,6 +163,11 @@ bool fromJson(const nlohmann::json& j, TaskResultRequest& out, ProtocolError& er
         return false;
     }
     out.worker_id = j["worker_id"].get<std::string>();
+
+    if (j.contains("run_id")) {
+        if (!j["run_id"].is_string()) return false;
+        out.run_id = j["run_id"].get<std::string>();
+    }
 
     if (!j.contains("status") || !j["status"].is_string()) {
         error.code = ProtocolErrorCode::MISSING_FIELD;
@@ -182,6 +200,7 @@ nlohmann::json toJson(const TaskResultRequest& value) {
     nlohmann::json j;
     j["task_id"] = value.task_id;
     j["worker_id"] = value.worker_id;
+    if (!value.run_id.empty()) j["run_id"] = value.run_id;
     j["status"] = taskStatusToString(value.status);
     j["message"] = value.message;
     return j;
@@ -193,6 +212,10 @@ bool fromJson(const nlohmann::json& j, TaskAssignRequest& out) {
         return false;
     }
     out.task_id = j["task_id"].get<TaskId>();
+    if (j.contains("run_id")) {
+        if (!j["run_id"].is_string()) return false;
+        out.run_id = j["run_id"].get<std::string>();
+    }
     if (out.task_id == 0) {
         return false;
     }
@@ -234,6 +257,7 @@ bool fromJson(const nlohmann::json& j, TaskAssignRequest& out) {
 nlohmann::json toJson(const TaskAssignRequest& value) {
     nlohmann::json j;
     j["task_id"] = value.task_id;
+    if (!value.run_id.empty()) j["run_id"] = value.run_id;
     j["task_type"] = taskTypeToString(value.task_type);
     j["target"] = value.target;
     j["revision"] = value.revision;

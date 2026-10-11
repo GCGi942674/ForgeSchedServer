@@ -12,6 +12,7 @@ import select
 import signal
 import subprocess
 import time
+from recovery_journal import write_json
 
 
 def descendants():
@@ -38,6 +39,7 @@ def main():
     parser.add_argument('--completion', type=int, required=True)
     parser.add_argument('--timeout', type=float, required=True)
     parser.add_argument('--grace', type=float, required=True)
+    parser.add_argument('--receipt')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
@@ -93,6 +95,8 @@ def main():
                 except ChildProcessError:
                     break
         time.sleep(0.02)
+    if args.receipt:
+        write_json(args.receipt, dict(clean=True, token=Path(args.receipt).name))
     try:
         os.write(args.completion, b"C")
     except BrokenPipeError:

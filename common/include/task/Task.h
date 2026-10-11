@@ -28,6 +28,9 @@ public:
 
     int getPriority() const { return priority_; }
     int getRetryCount() const { return retry_count_; }
+    uint64_t getQueueSequence() const { return queue_sequence_; }
+    const std::string& getRunId() const { return run_id_; }
+    bool recoveryRequired() const { return recovery_required_; }
 
     const auto& getCreatedAt() const { return created_at_; }
     const auto& getStartedAt() const { return started_at_; }
@@ -42,6 +45,15 @@ public:
     void setPayload(nlohmann::json payload) { payload_ = std::move(payload); }
     void setExecutionSummary(nlohmann::json& summary) noexcept { execution_summary_.swap(summary); }
     void incrementRetryCount() { retry_count_++; }
+    void setQueueSequence(uint64_t value) { queue_sequence_ = value; }
+    void setRunId(std::string value) { run_id_ = std::move(value); }
+    void setRecoveryRequired(bool value) { recovery_required_ = value; }
+    void restore(TaskStatus status, std::string worker_id, int retry_count,
+                 nlohmann::json payload, nlohmann::json execution,
+                 uint64_t queue_sequence, std::string run_id, bool recovery_required,
+                 std::chrono::system_clock::time_point created,
+                 std::chrono::system_clock::time_point started,
+                 std::chrono::system_clock::time_point finished);
 
     Task(const Task&) = default;
     Task& operator=(const Task&) = default;
@@ -61,6 +73,9 @@ private:
 
     int priority_;
     int retry_count_;
+    uint64_t queue_sequence_{0};
+    std::string run_id_;
+    bool recovery_required_{false};
 
     std::chrono::system_clock::time_point created_at_;
     std::chrono::system_clock::time_point started_at_;

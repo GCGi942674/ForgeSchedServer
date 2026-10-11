@@ -7,7 +7,8 @@ namespace ForgeSched {
 
 enum class WorkerStatus {
     ONLINE,
-    OFFLINE
+    OFFLINE,
+    DRAINING
 };
 
 std::string toString(WorkerStatus status);

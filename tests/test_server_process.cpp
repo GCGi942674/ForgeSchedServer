@@ -21,7 +21,8 @@ int main(int argc, char** argv) { return testMain([&] {
     auto configure = [&](int port) {
         std::ofstream out(std::string(path)+"/config/forgesched.conf"); CHECK(out.good());
         out << "server.bind_ip=127.0.0.1\nserver.port=" << port
-            << "\nserver.io_threads=2\nserver.worker_threads=2\nlog.level=WARN\nlog.dir=./logs\n";
+            << "\nserver.io_threads=2\nserver.worker_threads=2\nlog.level=WARN\nlog.dir=./logs\n"
+            << "database.path=" << path << "/state.db\n";
     };
     auto launch = [&](Child& child) {
         child.pid = ::fork(); CHECK(child.pid >= 0);
@@ -30,19 +31,28 @@ int main(int argc, char** argv) { return testMain([&] {
             ::execl(executable.c_str(), executable.c_str(), static_cast<char*>(nullptr)); ::_exit(127);
         }
     };
+    uint64_t previous_id = 0;
     for (int sig : {SIGTERM, SIGINT}) {
         int port = freePort(); configure(port); Child child; launch(child);
         auto conn = connectTo(port);
         response(conn.value, envelope("worker_register", {{"worker_id", "process"}, {"hostname", "h"}, {"slots", 1u}}), true);
         ForgeSched::ForgeClient client("127.0.0.1", port);
+        if (previous_id)
+            CHECK(client.query(previous_id).data["result"]["status"] == "SUCCEEDED");
         auto submitted = client.submit("process-control", "r");
         CHECK(submitted.data["code"] == 0);
         const auto id = submitted.data["result"]["task_id"].get<uint64_t>();
-        CHECK(receiveJson(conn.value)["data"]["task_id"] == id);
-        response(conn.value, envelope("task_start", {{"task_id", id}, {"worker_id", "process"}}), true);
+        CHECK(id > previous_id);
+        auto assignment = receiveJson(conn.value);
+        CHECK(assignment["data"]["task_id"] == id);
+        const auto run_id = assignment["data"]["run_id"].get<std::string>();
+        response(conn.value, envelope("task_start", {{"task_id", id}, {"worker_id", "process"},
+            {"run_id", run_id}}), true);
         response(conn.value, envelope("task_result",
-            {{"task_id", id}, {"worker_id", "process"}, {"status", "SUCCEEDED"}}), true);
+            {{"task_id", id}, {"worker_id", "process"}, {"run_id", run_id},
+             {"status", "SUCCEEDED"}}), true);
         CHECK(client.query(id).data["result"]["status"] == "SUCCEEDED");
+        previous_id = id;
         CHECK(::kill(child.pid, sig) == 0); CHECK(child.wait() == 0);
     }
     configure(70000); Child invalid; launch(invalid); CHECK(invalid.wait() == 1);

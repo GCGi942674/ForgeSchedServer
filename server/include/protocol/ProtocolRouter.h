@@ -38,6 +38,7 @@ public:
     );
 
     ProtocolMessage handle(const ProtocolMessage& request);
+    void holdWorker(const WorkerId& id) { scheduler_.holdWorker(id); }
 
     ProtocolRouter(const ProtocolRouter&) = delete;
     ProtocolRouter& operator=(const ProtocolRouter&) = delete;

@@ -17,11 +17,14 @@ public:
     bool registerWorker(
         const WorkerId& worker_id,
         const std::string& hostname,
-        uint32_t slots
+        uint32_t slots,
+        const std::string& machine_id = "",
+        const std::string& slot_id = ""
     );
 
     bool heartbeat(const WorkerId& worker_id);
     bool markOffline(const WorkerId& worker_id);
+    bool markDraining(const WorkerId& worker_id);
 
     bool acquireSlot(const WorkerId& worker_id);
     bool releaseSlot(const WorkerId& worker_id);

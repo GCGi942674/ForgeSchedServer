@@ -99,6 +99,20 @@ class PJtestAdapter:
         self.healthy = True
 
     def _ensure_checkout(self, config):
+        checkout_lock = config.get("checkout_lock")
+        if checkout_lock:
+            lock_path = Path(checkout_lock).expanduser().resolve()
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                self._checkout_locked(config)
+            finally:
+                os.close(lock_fd)
+            return
+        self._checkout_locked(config)
+
+    def _checkout_locked(self, config):
         root = self.galaxcore_root
         if not root.exists():
             svn_url = config.get("svn_url")

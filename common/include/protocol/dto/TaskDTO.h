@@ -16,6 +16,7 @@ struct SubmitTaskRequest {
     std::string revision;
     int priority{0};
     nlohmann::json payload = nlohmann::json::object();
+    std::string submission_key;
 };
 
 struct QueryTaskRequest {
@@ -29,17 +30,20 @@ struct CancelTaskRequest {
 struct TaskStartRequest {
     TaskId task_id;
     std::string worker_id;
+    std::string run_id;
 };
 
 struct TaskResultRequest {
     TaskId task_id;
     std::string worker_id;
+    std::string run_id;
     TaskStatus status;
     std::string message;
 };
 
 struct TaskAssignRequest {
     TaskId task_id{0};
+    std::string run_id;
     TaskType task_type{TaskType::UNKNOWN};
     std::string target;
     std::string revision;

@@ -83,16 +83,25 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(state["phase"], "complete")
 
         (self.root / "state.json").unlink()
+        replay_keys = []
         def lost_ack(_, kind, data):
             if kind == "query_status":
                 return {"pending": 0, "queued": 0, "assigned": 0, "running": 0, "total": 0}
+            replay_keys.append(data["submission_key"])
             raise TimeoutError("ack lost")
         with mock.patch.object(clock, "request", side_effect=lost_ack):
             with self.assertRaises(TimeoutError):
                 clock.run(self.config, interval=0)
-            with self.assertRaisesRegex(RuntimeError, "uncertain"):
-                clock.run(self.config, interval=0)
         self.assertTrue(json.loads((self.root / "state.json").read_text())["uncertain"])
+        def recovered(_, kind, data):
+            if kind == "query_status":
+                return {"pending": 0, "queued": 0, "assigned": 0, "running": 0, "total": 0}
+            replay_keys.append(data["submission_key"])
+            return {"task_id": 102}
+        with mock.patch.object(clock, "request", side_effect=recovered):
+            self.assertEqual(clock.run(self.config, interval=0), 0)
+        self.assertEqual(replay_keys[0], replay_keys[1])
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["task_ids"], [102])
 
     def test_stop_during_submission_records_known_tasks(self):
         self.yaml.write_text(yaml.safe_dump({"tasks": [

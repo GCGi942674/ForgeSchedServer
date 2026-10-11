@@ -18,6 +18,7 @@ add_library(forgesched_server_core STATIC
     src/SchedulingDriver.cpp
     src/TaskIdGenerator.cpp
     src/TaskService.cpp
+    src/StateStore.cpp
     src/WorkerConnectionRegistry.cpp
     src/WorkerManager.cpp
     src/WorkerServer.cpp
@@ -30,9 +31,11 @@ target_include_directories(forgesched_server_core
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+find_package(SQLite3 REQUIRED)
 target_link_libraries(forgesched_server_core
     PUBLIC
         common
+        SQLite::SQLite3
 )
 add_executable(server src/main.cpp)
 target_link_libraries(server PRIVATE forgesched_server_core)

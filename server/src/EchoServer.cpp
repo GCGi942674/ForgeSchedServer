@@ -44,8 +44,46 @@ std::vector<std::shared_ptr<Connection>> EchoServer::connectionSnapshot() {
 void EchoServer::onMessage(const std::shared_ptr<Connection> &conn,
                            const std::string &msg) {
   if (protocol_message_) {
-    auto guard = finally([&] { conn->decPendingTasks(); });
-    protocol_message_(conn, msg);
+    int queued = -1;
+    try { queued = conn->enqueueProtocolMessage(msg); }
+    catch (...) {
+      conn->decPendingTasks();
+      conn->setState(Connection::ConnState::Disconnected);
+      removeConnection(conn, ServerMetrics::CloseReason::ReadError);
+      return;
+    }
+    if (queued < 0) {
+      conn->decPendingTasks();
+      conn->setState(Connection::ConnState::Disconnected);
+      removeConnection(conn, ServerMetrics::CloseReason::ReadError);
+      return;
+    }
+    if (queued == 0) return;
+    bool accepted = false;
+    try {
+      accepted = pool_.addTask([this, conn]() {
+        while (auto next = conn->nextProtocolMessage()) {
+          auto finished = finally([&] { conn->decPendingTasks(); });
+          if (conn->isDisconnected()) continue;
+          try { protocol_message_(conn, *next); }
+          catch (...) {
+            conn->setState(Connection::ConnState::Disconnected);
+          }
+        }
+        conn->ownerLoop()->tryQueueInLoop([this, conn]() {
+          if (conn->isDisconnected())
+            removeConnection(conn, ServerMetrics::CloseReason::ReadError);
+          else if (conn->canBeClosed())
+            removeConnection(conn, ServerMetrics::CloseReason::PeerClosed);
+        });
+      });
+    } catch (...) {}
+    if (!accepted) {
+      const auto dropped = conn->abandonProtocolMessages();
+      for (size_t i = 0; i < dropped; ++i) conn->decPendingTasks();
+      conn->setState(Connection::ConnState::Disconnected);
+      removeConnection(conn, ServerMetrics::CloseReason::ReadError);
+    }
     return;
   }
   std::weak_ptr<Connection> weak_conn = conn;

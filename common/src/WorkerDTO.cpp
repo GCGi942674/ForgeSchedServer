@@ -31,6 +31,23 @@ bool fromJson(const nlohmann::json& j, WorkerRegisterRequest& out, ProtocolError
         return false;
     }
 
+    if (j.contains("machine_id") != j.contains("slot_id")) {
+        error.code = ProtocolErrorCode::MISSING_FIELD;
+        error.message = "machine_id and slot_id must be supplied together";
+        return false;
+    }
+    out.explicit_identity = j.contains("machine_id");
+    for (const auto& field : {"machine_id", "slot_id"}) {
+        if (j.contains(field) && (!j[field].is_string() ||
+                j[field].get<std::string>().empty() || j[field].get<std::string>().size() > 64)) {
+            error.code = ProtocolErrorCode::INVALID_FIELD_VALUE;
+            error.message = std::string("invalid field: ") + field;
+            return false;
+        }
+    }
+    out.machine_id = out.explicit_identity ? j["machine_id"].get<std::string>() : "";
+    out.slot_id = out.explicit_identity ? j["slot_id"].get<std::string>() : "";
+
     if (j.contains("slots") && j["slots"].is_number_unsigned()) {
         const auto slots = j["slots"].get<uint64_t>();
         if (slots == 0 || slots > std::numeric_limits<uint32_t>::max()) {
@@ -52,6 +69,10 @@ nlohmann::json toJson(const WorkerRegisterRequest& value) {
     nlohmann::json j;
     j["worker_id"] = value.worker_id;
     j["hostname"] = value.hostname;
+    if (value.explicit_identity) {
+        j["machine_id"] = value.machine_id;
+        j["slot_id"] = value.slot_id;
+    }
     j["slots"] = value.slots;
     return j;
 }

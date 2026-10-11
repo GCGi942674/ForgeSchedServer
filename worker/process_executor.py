@@ -17,6 +17,7 @@ class ProcessExecutor:
         self.completion = None
         self.safe = True
         self.heartbeat = heartbeat or (lambda: None)
+        self.before_launch = None
 
     def stop(self, grace=0):
         if self.lease is not None:
@@ -39,6 +40,7 @@ class ProcessExecutor:
     def run(self, argv, cwd, env, stdout, stderr, timeout, grace=2, on_start=None):
         if not self.safe:
             raise ExecutionContainmentError("execution supervisor lost; restart requires inspection")
+        receipt = self.before_launch() if self.before_launch else None
         read_fd, self.lease = os.pipe()
         self.completion, completion_write = os.pipe()
         try:
@@ -46,6 +48,7 @@ class ProcessExecutor:
                 [sys.executable, '-B', str(Path(__file__).with_name('execution_guard.py')),
                  '--lease', str(read_fd), '--timeout', str(timeout), '--grace', str(grace),
                  '--completion', str(completion_write),
+                 *(['--receipt', str(receipt)] if receipt else []),
                  '--', *map(str, argv)], cwd=str(cwd), env=env, stdout=stdout,
                 stderr=stderr, start_new_session=True, pass_fds=(read_fd, completion_write))
         except BaseException:

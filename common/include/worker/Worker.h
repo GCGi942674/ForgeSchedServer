@@ -18,6 +18,8 @@ public:
 
     WorkerId getId() const { return id_; }
     const std::string& getHostname() const { return hostname_; }
+    const std::string& getMachineId() const { return machine_id_; }
+    const std::string& getSlotId() const { return slot_id_; }
     WorkerStatus getStatus() const { return status_; }
     uint32_t getTotalSlots() const { return total_slots_; }
     uint32_t getUsedSlots() const { return used_slots_; }
@@ -32,6 +34,13 @@ public:
     void setTotalSlots(uint32_t slots) { total_slots_ = slots; }
     void setOnline() { status_ = WorkerStatus::ONLINE; }
     void setOffline() { status_ = WorkerStatus::OFFLINE; }
+    void setDraining() { status_ = WorkerStatus::DRAINING; }
+    void setIdentity(std::string machine, std::string slot, bool explicit_identity = false) {
+        machine_id_ = std::move(machine);
+        slot_id_ = std::move(slot);
+        explicit_identity_ = explicit_identity;
+    }
+    bool hasExplicitIdentity() const { return explicit_identity_; }
     void updateHeartbeat();
 
     Worker(const Worker&) = default;
@@ -46,6 +55,9 @@ private:
     bool releaseSlot();
     WorkerId id_;
     std::string hostname_;
+    std::string machine_id_;
+    std::string slot_id_;
+    bool explicit_identity_{false};
     WorkerStatus status_;
 
     uint32_t total_slots_;

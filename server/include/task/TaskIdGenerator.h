@@ -17,6 +17,7 @@ public:
     TaskIdGenerator& operator=(const TaskIdGenerator&) = delete;
 
     TaskId next();
+    void setNext(TaskId value) { next_id_.store(value, std::memory_order_relaxed); }
 
     TaskIdGenerator(TaskIdGenerator&&) = delete;
     TaskIdGenerator& operator=(TaskIdGenerator&&) = delete;

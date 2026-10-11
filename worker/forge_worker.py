@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Single-slot Linux demo executor. Never executes commands from task metadata."""
 import argparse
+import fcntl
 import hashlib
 import json
 import math
@@ -15,12 +16,18 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from process_executor import ProcessExecutor
 from pjtest_adapter import PJtestAdapter
 from runtime_config import load_config
+from recovery_journal import write_json, remove
 
 MAX_FRAME = 1024 * 1024
 _SLOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+
+
+class TransportError(ConnectionError):
+    """Only network failures may enter the automatic reconnect path."""
 
 
 def shared_pjtest_settings(config, worker_id, output):
@@ -40,6 +47,7 @@ def shared_pjtest_settings(config, worker_id, output):
                 svn_revision=config.get("worker.svn_revision") or None,
                 artifact_root=artifact, log_root=str(output), flow_profiles={},
                 require_server_flow=True,
+                checkout_lock=str(slots_root / ".checkout.lock"),
                 clean=clean_value == "true", terminate_grace_seconds=grace)
 
 
@@ -51,13 +59,96 @@ class Worker:
         self.sequence = 0
         self.assigned = None
         self.process = None
-        self.executor = ProcessExecutor(
-            lambda: self.request("worker_heartbeat", dict(worker_id=self.args.worker_id)))
-        self.adapter = (PJtestAdapter(args.pjtest_config, args.worker_id, self.executor.heartbeat,
-                                     args.pjtest_paths)
-                        if args.pjtest_config else None)
-        if self.adapter and not args.pjtest_paths.get("log_root"):
-            args.output = self.adapter.log_root
+        self.next_reconnect = 0
+        self.draining = False
+        self.executor = ProcessExecutor(self.heartbeat)
+        self.executor.before_launch = self.before_launch
+        self.adapter = None
+        if args.pjtest_config and not args.pjtest_paths.get("log_root"):
+            settings = (args.pjtest_config if isinstance(args.pjtest_config, dict) else
+                        json.loads(args.pjtest_config.read_text(encoding="utf-8")))
+            args.output = Path(settings["log_root"]).expanduser().resolve()
+
+    def active_path(self):
+        return self.pending_path().with_name(self.pending_path().name.replace("pending-report-", "active-"))
+
+    def drain_path(self):
+        return self.args.output / ".drain"
+
+    def acknowledge_drain(self):
+        if self.drain_path().exists() and not self.draining and self.sock is not None:
+            self.request("worker_drain", dict(worker_id=self.args.worker_id))
+            self.draining = True
+            print("[WORKER] slot draining; current case will finish", flush=True)
+
+    def before_launch(self):
+        receipt = self.args.output / ("clean-" + uuid.uuid4().hex + ".json")
+        journal = json.loads(self.active_path().read_text(encoding="utf-8"))
+        journal["receipt"] = str(receipt.resolve())
+        write_json(self.active_path(), journal)
+        return receipt
+
+    def disconnect(self):
+        if self.sock is not None:
+            self.sock.close()
+        self.sock = None
+        self.buffer.clear()
+        self.next_reconnect = time.monotonic() + self.args.reconnect_seconds
+
+    def heartbeat(self):
+        # Transport loss must not unwind ProcessExecutor and kill a live case.
+        try:
+            if self.sock is None:
+                if time.monotonic() < self.next_reconnect:
+                    return
+                self.connect()
+            self.acknowledge_drain()
+            self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+        except TransportError as error:
+            if self.sock is not None:
+                print("[WORKER] connection lost; execution continues: " + str(error), flush=True)
+            self.disconnect()
+
+    def connect(self):
+        try:
+            self.sock = socket.create_connection((self.args.host, self.args.port), timeout=5)
+        except OSError as error:
+            raise TransportError(str(error)) from error
+        self.buffer.clear()
+        self.request("worker_register", dict(worker_id=self.args.worker_id,
+                     hostname=socket.gethostname(), machine_id=self.args.machine_id,
+                     slot_id=self.args.slot_id, slots=1, recovery_version=1))
+        self.draining = False
+        self.acknowledge_drain()
+        self.flush_report()
+        data = dict(worker_id=self.args.worker_id, state="idle")
+        if self.assigned is not None:
+            data.update(state="active", task_id=self.assigned["task_id"],
+                        run_id=self.assigned.get("run_id", ""))
+        elif self.active_path().exists():
+            journal = json.loads(self.active_path().read_text(encoding="utf-8"))
+            if (journal.get("worker_id") != self.args.worker_id or
+                    type(journal.get("task_id")) is not int or
+                    not isinstance(journal.get("run_id"), str) or not journal["run_id"] or
+                    "receipt" not in journal):
+                raise RuntimeError("invalid active journal; inspect " + str(self.active_path()))
+            receipt = journal["receipt"]
+            if receipt is not None:
+                path = Path(receipt)
+                if (path.parent.resolve() != self.args.output.resolve() or
+                        path.is_symlink() or not path.is_file() or
+                        json.loads(path.read_text(encoding="utf-8")) != dict(clean=True, token=path.name)):
+                    raise RuntimeError("execution exit unproven; Worker quarantined: " + str(path))
+            data.update(state="lost", task_id=journal["task_id"], run_id=journal["run_id"])
+        result = self.request("worker_recover", data)
+        action = result.get("action")
+        if action in ("requeued", "failed", "cancelled") and data["state"] == "lost":
+            remove(self.active_path())
+            result = self.request("worker_recover", dict(worker_id=self.args.worker_id, state="idle"))
+            action = result.get("action")
+        if action not in ("ready", "resume"):
+            raise RuntimeError("recovery blocked; inspect server task and local journal: " + repr(result))
+        print("[WORKER] connected; recovery=" + action, flush=True)
 
     def pending_path(self):
         identity = hashlib.sha256(self.args.worker_id.encode("utf-8")).hexdigest()[:24]
@@ -92,6 +183,8 @@ class Worker:
                 not isinstance(report.get("message"), str)):
             raise RuntimeError("invalid pending report; inspect " + str(path))
         self.request("task_result", report)
+        # The outbox is authoritative if a crash leaves both files behind.
+        remove(self.active_path())
         path.unlink()
         directory_fd = os.open(str(self.args.output), os.O_RDONLY | os.O_DIRECTORY)
         try:
@@ -137,6 +230,12 @@ class Worker:
             raise RuntimeError("demo Worker refuses business regression payload")
 
     def request(self, kind, data):
+        try:
+            return self._request(kind, data)
+        except OSError as error:
+            raise TransportError(str(error)) from error
+
+    def _request(self, kind, data):
         self.sequence += 1
         body = json.dumps(dict(version=1, type=kind, request_id=self.sequence,
                                data=data)).encode()
@@ -148,10 +247,13 @@ class Worker:
                 self.assignment(message)
                 continue
             if (message.get("type") != "response" or message["request_id"] != self.sequence
-                    or type(message["data"].get("code")) is not int
-                    or message["data"]["code"] != 0):
+                    or type(message["data"].get("code")) is not int):
                 raise RuntimeError("request rejected: " + repr(message)[:500])
-            return
+            if message["data"]["code"] == 4:
+                raise ConnectionError("server temporarily unable to persist request")
+            if message["data"]["code"] != 0:
+                raise RuntimeError("request rejected: " + repr(message)[:500])
+            return message["data"].get("result")
 
     def stop_process(self):
         self.executor.stop()
@@ -167,8 +269,15 @@ class Worker:
     def execute(self, root):
         assignment = self.assigned
         task_id = assignment["task_id"]
-        self.request("task_start", dict(task_id=task_id, worker_id=self.args.worker_id))
+        write_json(self.active_path(), dict(worker_id=self.args.worker_id, task_id=task_id,
+                   run_id=assignment.get("run_id", ""), receipt=None))
+        start = dict(task_id=task_id, worker_id=self.args.worker_id)
+        if assignment.get("run_id"):
+            start["run_id"] = assignment["run_id"]
+        self.request("task_start", start)
         directory = root / str(task_id)
+        if directory.exists():
+            directory = Path(tempfile.mkdtemp(prefix="run-", dir=str(self.args.output))) / str(task_id)
         if self.adapter:
             result = self.adapter.execute(assignment, directory)
             if not self.adapter.healthy:
@@ -189,36 +298,73 @@ class Worker:
                           status=("TIMEOUT" if timed_out else "SUCCEEDED" if code == 0 else "FAILED"))
             (directory / "result.json").write_text(json.dumps(result) + "\n")
         status = result["status"]
+        self.acknowledge_drain()
         report = dict(task_id=task_id, worker_id=self.args.worker_id,
                       status=status, message=json.dumps(result))
+        if assignment.get("run_id"):
+            report["run_id"] = assignment["run_id"]
         self.save_report(report)
         # The server can send the next assignment before acknowledging this result.
         self.assigned = None
-        self.flush_report()
+        if self.sock is not None:
+            self.flush_report()
         print(json.dumps(result), flush=True)
 
     def run(self):
         self.args.output.mkdir(parents=True, exist_ok=True)
         if self.pending_path().exists() and self.pending_path().is_symlink():
             raise RuntimeError("unsafe pending report path")
+        if self.active_path().is_symlink():
+            raise RuntimeError("unsafe active journal path")
+        lock_fd = os.open(str(self.active_path()) + ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(lock_fd)
+            raise RuntimeError("another Worker owns this identity/output directory")
         root = Path(tempfile.mkdtemp(prefix="run-", dir=str(self.args.output)))
         try:
-            self.sock = socket.create_connection((self.args.host, self.args.port), timeout=5)
-            self.request("worker_register", dict(worker_id=self.args.worker_id,
-                                                 hostname=socket.gethostname(), slots=1))
-            self.flush_report()
+            # Validate local exit evidence before touching a possibly live slot.
+            if self.active_path().exists() and not self.pending_path().exists():
+                journal = json.loads(self.active_path().read_text(encoding="utf-8"))
+                receipt = journal.get("receipt")
+                if receipt and not Path(receipt).is_file():
+                    raise RuntimeError("execution exit unproven; Worker quarantined: " + receipt)
+            self.adapter = (PJtestAdapter(self.args.pjtest_config, self.args.worker_id,
+                            self.heartbeat, self.args.pjtest_paths) if self.args.pjtest_config else None)
+            if self.adapter:
+                self.adapter.executor.before_launch = self.before_launch
             while True:
-                if self.assigned is not None:
-                    self.execute(root)
-                else:
-                    try:
-                        self.assignment(self.receive(time.monotonic() + 1))
-                    except TimeoutError:
-                        self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+                try:
+                    if self.sock is None:
+                        time.sleep(max(0, self.next_reconnect - time.monotonic()))
+                        self.connect()
+                    self.acknowledge_drain()
+                    if self.pending_path().exists():
+                        self.flush_report()
+                    if self.draining and self.assigned is None and not self.pending_path().exists():
+                        return
+                    if self.assigned is not None:
+                        self.execute(root)
+                    else:
+                        try:
+                            incoming = self.receive(time.monotonic() + 1)
+                        except TimeoutError:
+                            self.heartbeat()
+                            continue
+                        except OSError as error:
+                            raise TransportError(str(error)) from error
+                        self.assignment(incoming)
+                except TransportError as error:
+                    print("[WORKER] reconnect pending: " + str(error), flush=True)
+                    self.disconnect()
         finally:
-            self.stop_process()
-            if self.sock is not None:
-                self.sock.close()
+            try:
+                self.stop_process()
+                if self.sock is not None:
+                    self.sock.close()
+            finally:
+                os.close(lock_fd)
 
 
 def main():
@@ -226,6 +372,8 @@ def main():
     parser.add_argument("--host", help="override network.server_ip")
     parser.add_argument("--port", type=int, help="override server.port")
     parser.add_argument("--worker-id", required=True)
+    parser.add_argument("--machine-id", help="stable host identity for multi-slot manager")
+    parser.add_argument("--slot-id", help="stable slot identity on this host")
     parser.add_argument("--output", type=Path, help="override worker.output_dir")
     parser.add_argument("--demo-seconds", type=float, default=3)
     parser.add_argument("--demo-exit-code", type=int, default=0)
@@ -240,6 +388,15 @@ def main():
         args.host = args.host or config["network.server_ip"]
         args.port = args.port if args.port is not None else int(config["server.port"])
         args.output = args.output or Path(config["worker.output_dir"])
+        default_machine = "host-" + re.sub(r"[^A-Za-z0-9_-]", "_", socket.gethostname())[:59]
+        args.machine_id = args.machine_id or config.get("worker.machine_id") or default_machine
+        args.slot_id = args.slot_id or args.worker_id
+        if (not _SLOT_ID.fullmatch(args.machine_id) or
+                not _SLOT_ID.fullmatch(args.slot_id)):
+            raise ValueError("machine and slot IDs must be 1-64 letters, digits, _ or -")
+        args.reconnect_seconds = float(config.get("worker.reconnect_seconds", "2"))
+        if not math.isfinite(args.reconnect_seconds) or not 0.05 <= args.reconnect_seconds <= 60:
+            raise ValueError("worker.reconnect_seconds must be between 0.05 and 60")
         explicit_config = args.pjtest_config is not None
         if not explicit_config and not args.demo:
             args.pjtest_config = shared_pjtest_settings(config, args.worker_id, args.output)

@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <unordered_map>
+#include <memory>
 
 static int g_signal_fd = -1;
 
@@ -87,9 +88,17 @@ int main(int argc, char** argv) {
 
   // Step 4: Start server with configured settings
   EchoHandler handler;
-  ForgeSched::WorkerServer worker_server;
+  std::unique_ptr<ForgeSched::WorkerServer> worker_server;
+  try {
+    worker_server = std::make_unique<ForgeSched::WorkerServer>(true);
+  } catch (const std::exception& error) {
+    std::cerr << "[SERVER] State database unavailable: " << error.what() << std::endl;
+    ::close(g_signal_fd);
+    g_signal_fd = -1;
+    return 1;
+  }
   EchoServer server(port, handler, g_signal_fd, io_threads, worker_threads, bind_ip);
-  worker_server.attach(server);
+  worker_server->attach(server);
 
   bool ran = server.run();
 
