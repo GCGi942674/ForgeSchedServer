@@ -336,6 +336,13 @@ class Worker:
                 self.adapter.executor.before_launch = self.before_launch
             while True:
                 try:
+                    # A disconnected, idle slot may drain locally. There is no
+                    # in-flight assignment or unsent result to reconcile.
+                    if (self.sock is None and self.drain_path().exists() and
+                            self.assigned is None and not self.pending_path().exists()):
+                        self.draining = True
+                        print("[WORKER] idle slot drained while disconnected", flush=True)
+                        return
                     if self.sock is None:
                         time.sleep(max(0, self.next_reconnect - time.monotonic()))
                         self.connect()

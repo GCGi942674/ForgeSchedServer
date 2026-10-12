@@ -12,6 +12,7 @@ enum class MessageType {
     CANCEL_TASK,
     QUERY_BATCH,
     CANCEL_BATCH,
+    QUERY_REGRESSION,
 
     WORKER_REGISTER,
     WORKER_HEARTBEAT,

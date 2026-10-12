@@ -97,7 +97,18 @@ target_link_libraries(test_worker_distribution PRIVATE forgesched_server_core)
 add_test(NAME test_worker_distribution COMMAND test_worker_distribution)
 set_tests_properties(test_worker_distribution PROPERTIES TIMEOUT 30)
 
+add_executable(test_regression_service test_regression_service.cpp)
+target_link_libraries(test_regression_service PRIVATE forgesched_server_core)
+target_compile_options(test_regression_service PRIVATE -UNDEBUG)
+add_test(NAME test_regression_service COMMAND test_regression_service)
+set_tests_properties(test_regression_service PROPERTIES TIMEOUT 30)
+
 add_test(NAME test_multislot_process COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_multislot_process.py
   $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR}/worker/slot_manager.py)
 set_tests_properties(test_multislot_process PROPERTIES TIMEOUT 120)
+
+add_test(NAME test_intranet_smoke COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_intranet_smoke.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR})
+set_tests_properties(test_intranet_smoke PROPERTIES TIMEOUT 150)

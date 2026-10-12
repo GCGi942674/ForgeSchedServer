@@ -15,6 +15,7 @@ public:
     Protocol::ProtocolMessage cancel(uint64_t task_id);
     Protocol::ProtocolMessage queryBatch(const std::string& batch_id);
     Protocol::ProtocolMessage cancelBatch(const std::string& batch_id);
+    Protocol::ProtocolMessage queryRegression(const nlohmann::json& filter);
 private:
     std::string host_;
     uint16_t port_;

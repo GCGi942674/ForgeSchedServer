@@ -67,7 +67,10 @@ int main(int argc, char** argv) { return testMain([&] {
         {"query", "1junk"}, {"submit", "--target", "x"}, {"query", "1", "--priority", "2"},
         {"submit", "--target", "x", "--revision", "r", "--priority", "101"},
         {"--host", "not-an-ip", "query", "1"}, {"--port", "70000", "query", "1"},
-        {"--timeout-ms", "0", "query", "1"}, {"--port", "1", "--port", "2", "query", "1"}})
+        {"--timeout-ms", "0", "query", "1"}, {"--port", "1", "--port", "2", "query", "1"},
+        {"regression"}, {"regression", "--flow", "route"},
+        {"regression", "--revision", "18925", "--limit", "51"},
+        {"regression", "--revision", "18925", "--before", "0"}})
         CHECK(run(executable, std::move(args)).code == 64);
     auto submitted = invoke({"submit", "--target", "cli case", "--revision", "r 1", "--priority", "-3"});
     CHECK(submitted.code == 0);
@@ -88,6 +91,12 @@ int main(int argc, char** argv) { return testMain([&] {
                       {"flow_config", {{"route_design", 1}}},
                       {"context", {{"batch_id", "cli-batch"}}}}}});
     CHECK(batch_submit.data["code"] == 0);
+    auto regression = invoke({"regression", "--revision", "18925", "--batch-id", "cli-batch"});
+    CHECK(regression.code == 0);
+    auto regression_result = nlohmann::json::parse(regression.output)["result"];
+    CHECK(regression_result["total"] == 1);
+    CHECK(regression_result["items"][0]["outcome"] == "ACTIVE");
+    CHECK(api.queryRegression({{"revision", "18925"}, {"limit", 0}}).data["code"] == 1);
     CHECK(nlohmann::json::parse(invoke({"query-batch", "cli-batch"}).output)["result"]["queued"] == 1);
     auto batch_cancelled = invoke({"cancel-batch", "cli-batch"});
     CHECK(batch_cancelled.code == 0);

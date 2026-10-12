@@ -6,6 +6,7 @@
 #include "task/TaskType.h"
 #include "task/RegressionPayload.h"
 #include "scheduler/SchedulingDriver.h"
+#include "regression/RegressionService.h"
 #include "Logging.h"
 #include <chrono>
 #include "config/Config.h"
@@ -141,6 +142,15 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             }
 
             return buildResponse(request, ResponseCode::OK, "ok", taskToJson(*task));
+        }
+
+        case ForgeSched::Protocol::MessageType::QUERY_REGRESSION: {
+            auto filter = RegressionQuery::parse(request.data);
+            if (!filter)
+                return buildResponse(request, ResponseCode::INVALID_REQUEST,
+                                     "invalid regression query");
+            return buildResponse(request, ResponseCode::OK, "ok",
+                                 RegressionService(scheduler_).query(*filter));
         }
 
         case ForgeSched::Protocol::MessageType::QUERY_STATUS: {

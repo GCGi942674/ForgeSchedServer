@@ -21,6 +21,7 @@ CMakeCache.txt
 !CMakeLists.txt
 !**/CMakeLists.txt
 logs/
+/intranet-report/
 client_app
 server_app
 

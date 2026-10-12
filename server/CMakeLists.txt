@@ -13,6 +13,7 @@ add_library(forgesched_server_core STATIC
     src/Message.cpp
     src/NetworkWorkerDispatcher.cpp
     src/ProtocolRouter.cpp
+    src/RegressionService.cpp
     src/Scheduler.cpp
     src/SchedulingCoordinator.cpp
     src/SchedulingDriver.cpp

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 import zipfile
 
@@ -37,6 +38,17 @@ def gone(pid):
 
 
 class Safety(unittest.TestCase):
+    def test_idle_disconnected_slot_drains_without_server(self):
+        with tempfile.TemporaryDirectory(prefix='forge-drain-') as directory:
+            output = Path(directory)
+            (output / '.drain').write_text('{}')
+            args = SimpleNamespace(output=output, pjtest_config=None,
+                                   pjtest_paths={}, worker_id='offline-slot',
+                                   reconnect_seconds=0.1)
+            worker = Worker(args)
+            worker.run()
+            self.assertTrue(worker.draining)
+
     def test_shared_config_and_adapter_path_override(self):
         with tempfile.TemporaryDirectory(prefix="forge-config-") as directory:
             path = Path(directory) / "forgesched.conf"

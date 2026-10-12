@@ -23,6 +23,8 @@ void usage() {
               << "         [--case PATH/run.tcl --flow PROFILE --case-timeout SEC]\n"
               << "  query TASK_ID\n  cancel TASK_ID\n"
               << "  query-batch BATCH_ID\n  cancel-batch BATCH_ID\n"
+              << "  regression --revision REV | --case PATH/run.tcl | --batch-id ID\n"
+              << "             [--flow PROFILE] [--limit 1..50] [--before TASK_ID]\n"
               << "One JSON response on stdout; exit 0=OK, 2=server error, 1=transport/protocol error, 64=usage.\n"
               << "No automatic retries. Batch cancel stops queued cases; in-flight cases finish.\n";
 }
@@ -32,10 +34,11 @@ int main(int argc, char** argv) {
         if (!Config::instance().loadDefault())
             throw UsageError("missing config; set FORGESCHED_CONFIG");
         std::string host = Config::instance().getString("network.server_ip", "");
-        std::string command, target, revision, id, case_path, flow;
+        std::string command, target, revision, id, case_path, flow, batch_id;
         int port = Config::instance().getInt("server.port", 0);
         int timeout = Config::instance().getInt("network.timeout_ms", 0);
-        int priority = 0, case_timeout = 0;
+        int priority = 0, case_timeout = 0, limit = 0;
+        uint64_t before = 0;
         std::set<std::string> seen;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -53,6 +56,9 @@ int main(int argc, char** argv) {
                 else if (arg == "--case") case_path = value;
                 else if (arg == "--flow") flow = value;
                 else if (arg == "--case-timeout") case_timeout = number<int>(value);
+                else if (arg == "--batch-id") batch_id = value;
+                else if (arg == "--limit") limit = number<int>(value);
+                else if (arg == "--before") before = number<uint64_t>(value);
                 else throw UsageError("unknown option: " + arg);
             } else if (command.empty()) command = arg;
             else if (id.empty()) id = arg;
@@ -67,6 +73,8 @@ int main(int argc, char** argv) {
         ForgeClient client(host, static_cast<uint16_t>(port), timeout);
         Protocol::ProtocolMessage response;
         if (command == "submit") {
+            if (seen.count("--batch-id") || seen.count("--limit") || seen.count("--before"))
+                throw UsageError("regression query options are not allowed for submit");
             if (target.empty() || revision.empty() || !id.empty())
                 throw UsageError("submit requires --target and --revision, with no positional arguments");
             if (seen.count("--case") || seen.count("--flow") || seen.count("--case-timeout")) {
@@ -78,10 +86,26 @@ int main(int argc, char** argv) {
                      {"priority", priority}, {"payload", {{"spec_version", 1},
                         {"case", case_path}, {"flow", flow}, {"timeout_seconds", case_timeout}}}});
             } else response = client.submit(target, revision, priority);
+        } else if (command == "regression") {
+            if (!id.empty() || seen.count("--target") || seen.count("--priority") ||
+                seen.count("--case-timeout") ||
+                (revision.empty() && case_path.empty() && batch_id.empty()) ||
+                (seen.count("--limit") && (limit < 1 || limit > 50)) ||
+                (seen.count("--before") && before == 0))
+                throw UsageError("invalid regression query options");
+            nlohmann::json filter = nlohmann::json::object();
+            if (!revision.empty()) filter["revision"] = revision;
+            if (!case_path.empty()) filter["case"] = case_path;
+            if (!flow.empty()) filter["flow"] = flow;
+            if (!batch_id.empty()) filter["batch_id"] = batch_id;
+            if (seen.count("--limit")) filter["limit"] = limit;
+            if (seen.count("--before")) filter["before_task_id"] = before;
+            response = client.queryRegression(filter);
         } else if (command == "query" || command == "cancel" ||
                    command == "query-batch" || command == "cancel-batch") {
             if (seen.count("--target") || seen.count("--revision") || seen.count("--priority") ||
-                seen.count("--case") || seen.count("--flow") || seen.count("--case-timeout"))
+                seen.count("--case") || seen.count("--flow") || seen.count("--case-timeout") ||
+                seen.count("--batch-id") || seen.count("--limit") || seen.count("--before"))
                 throw UsageError("submit options are not allowed for query/cancel");
             if (command == "query-batch" || command == "cancel-batch") {
                 if (id.empty() || id.size() > 128) throw UsageError("invalid batch id");
@@ -91,7 +115,7 @@ int main(int argc, char** argv) {
                 if (!task_id) throw UsageError("task id must be positive");
                 response = command == "query" ? client.query(task_id) : client.cancel(task_id);
             }
-        } else throw UsageError("expected submit, query, cancel, query-batch or cancel-batch (see --help)");
+        } else throw UsageError("expected submit, query, cancel, query-batch, cancel-batch or regression (see --help)");
         std::cout << response.data.dump() << '\n';
         return response.data["code"] == 0 ? 0 : 2;
     } catch (const UsageError& e) {
