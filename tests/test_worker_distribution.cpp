@@ -1,4 +1,9 @@
 #include "scheduler/Scheduler.h"
+// Keep test assertions active in Release: several assertions execute the
+// registration and scheduling operations needed by later checks.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <set>
 

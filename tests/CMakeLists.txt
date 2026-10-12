@@ -126,3 +126,8 @@ set_tests_properties(test_intranet_two_machine_smoke PROPERTIES TIMEOUT 150)
 add_test(NAME test_slot_identity COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_slot_identity.py)
 set_tests_properties(test_slot_identity PROPERTIES TIMEOUT 20)
+
+add_test(NAME test_intranet_p10_p14 COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_intranet_p10_p14.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR})
+set_tests_properties(test_intranet_p10_p14 PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
