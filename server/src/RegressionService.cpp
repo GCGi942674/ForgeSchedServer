@@ -103,7 +103,30 @@ std::optional<RegressionQuery> RegressionQuery::parse(const nlohmann::json& requ
 }
 
 nlohmann::json RegressionService::query(const RegressionQuery& filter) const {
-    auto tasks = scheduler_.getTasks();
+    const auto key = nlohmann::json::array({filter.revision, filter.case_path,
+        filter.flow, filter.batch_id, filter.limit, filter.before_task_id}).dump();
+    if (cache_enabled_ && max_entries_ && ttl_seconds_ > 0) {
+        const auto generation = scheduler_.taskGeneration();
+        try {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            if (cached_generation_ != generation) {
+                if (!cache_.empty()) ++invalidations_;
+                cache_.clear();
+                cached_generation_ = generation;
+            }
+            const auto found = cache_.find(key);
+            if (found != cache_.end() && found->second.expires_at > std::chrono::steady_clock::now()) {
+                auto response = found->second.response;
+                ++hits_;
+                return response;
+            }
+            ++misses_;
+        } catch (const std::exception&) {
+            // Cache allocation failures must not fail a valid query.
+        }
+    }
+    auto snapshot = scheduler_.taskSnapshot();
+    auto& tasks = snapshot.second;
     std::sort(tasks.begin(), tasks.end(), [](const Task& a, const Task& b) {
         return a.getId() > b.getId();
     });
@@ -127,7 +150,28 @@ nlohmann::json RegressionService::query(const RegressionQuery& filter) const {
         {"total", total}, {"counts", counts}, {"items", rows},
         {"has_more", has_more}, {"next_before_task_id", nullptr}};
     if (has_more) response["next_before_task_id"] = rows.back()["task_id"];
+    if (cache_enabled_ && max_entries_ && ttl_seconds_ > 0 &&
+        scheduler_.taskGeneration() == snapshot.first) {
+        try {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            if (cached_generation_ != snapshot.first) {
+                cache_.clear();
+                cached_generation_ = snapshot.first;
+            }
+            if (cache_.size() >= max_entries_ && !cache_.count(key)) cache_.erase(cache_.begin());
+            cache_[key] = {response, std::chrono::steady_clock::now() +
+                                     std::chrono::seconds(ttl_seconds_)};
+        } catch (const std::exception&) {
+            // The freshly computed response remains authoritative.
+        }
+    }
     return response;
+}
+
+nlohmann::json RegressionService::cacheStats() const {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    return {{"hits", hits_}, {"misses", misses_},
+            {"invalidations", invalidations_}, {"entries", cache_.size()}};
 }
 
 } // namespace ForgeSched

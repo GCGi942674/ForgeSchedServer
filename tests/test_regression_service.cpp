@@ -1,4 +1,7 @@
 #include "regression/RegressionService.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <string>
 
@@ -61,4 +64,19 @@ int main() {
     const auto selected = service.query(*revision);
     assert(selected["total"] == 3 && selected["has_more"] == false);
     assert(selected["items"][0]["outcome"] == "FAIL");
+
+    RegressionService cached(scheduler, true, 2, 60);
+    const auto before = cached.query(*filter);
+    assert(cached.query(*filter) == before);
+    assert(cached.cacheStats()["hits"] == 1);
+    add(8, "18927", "daily-3");
+    const auto after = cached.query(*filter);
+    assert(after["total"] == 8 && after["items"][0]["task_id"] == 8);
+    assert(cached.cacheStats()["invalidations"] == 1);
+    assert(scheduler.cancelTask(8));
+    assert(cached.query(*filter)["counts"]["CANCELLED"] == 2);
+    cached.query(*filter);
+    complete(7, TaskStatus::SUCCEEDED, {{"case_status", "PASS"}});
+    const auto terminal = cached.query(*filter);
+    assert(terminal["counts"]["PASS"] == 2);
 }

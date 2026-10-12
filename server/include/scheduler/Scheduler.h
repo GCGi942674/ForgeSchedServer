@@ -60,6 +60,9 @@ public:
 
     std::optional<Task> getTask(TaskId id) const;
     std::vector<Task> getTasks() const;
+    // The tasks and generation are captured under the same lock.
+    std::pair<uint64_t, std::vector<Task>> taskSnapshot() const;
+    uint64_t taskGeneration() const;
     std::vector<Task> getTasksByStatus(TaskStatus status) const;
 
     Scheduler(const Scheduler&) = delete;
@@ -94,6 +97,7 @@ private:
     std::unordered_set<std::string> reconciling_workers_;
     StateStore* store_{nullptr};
     uint64_t next_sequence_;
+    uint64_t task_generation_{0};
     std::string last_selected_worker_;
     mutable std::mutex mutex_;
 

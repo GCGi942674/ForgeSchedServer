@@ -11,6 +11,7 @@
 #include "protocol/dto/TaskDTO.h"
 #include "protocol/dto/WorkerDTO.h"
 #include "protocol/dto/Response.h"
+#include "regression/RegressionService.h"
 
 namespace ForgeSched {
 
@@ -57,6 +58,7 @@ private:
     Scheduler& scheduler_;
     WorkerManager& worker_manager_;
     SchedulingDriver& scheduling_driver_;
+    RegressionService regression_service_;
 };
 
 } // namespace ForgeSched::Protocol

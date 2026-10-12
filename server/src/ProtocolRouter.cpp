@@ -10,6 +10,7 @@
 #include "Logging.h"
 #include <chrono>
 #include "config/Config.h"
+#include <algorithm>
 
 namespace {
 nlohmann::json batchResult(const std::string& id, const ForgeSched::BatchSnapshot& s) {
@@ -76,6 +77,10 @@ ProtocolRouter::ProtocolRouter(
     , scheduler_(scheduler)
     , worker_manager_(worker_manager)
     , scheduling_driver_(scheduling_driver)
+    , regression_service_(scheduler,
+          Config::instance().getBool("cache.regression.enabled", false),
+          static_cast<size_t>(std::max(1, Config::instance().getInt("cache.regression.max_entries", 1000))),
+          std::max(1, Config::instance().getInt("cache.regression.ttl_seconds", 5)))
 {
 }
 
@@ -150,7 +155,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST,
                                      "invalid regression query");
             return buildResponse(request, ResponseCode::OK, "ok",
-                                 RegressionService(scheduler_).query(*filter));
+                                 regression_service_.query(*filter));
         }
 
         case ForgeSched::Protocol::MessageType::QUERY_STATUS: {
@@ -186,7 +191,8 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok",
                                  {{"queued", queued}, {"assigned", assigned},
                                   {"running", running}, {"pending", pending}, {"total", total},
-                                  {"workers", workers}, {"machines", machines}});
+                                  {"workers", workers}, {"machines", machines},
+                                  {"regression_cache", regression_service_.cacheStats()}});
         }
 
         case ForgeSched::Protocol::MessageType::CANCEL_TASK: {
