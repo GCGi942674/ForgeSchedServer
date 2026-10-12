@@ -13,16 +13,13 @@ import time
 
 from intranet_smoke_common import (ROOT, config_and_root, number, path_from,
                                     report_path, request, tail, utc_now, write_report)
+from slot_manager import slot_settings
 
 
 def preflight(config):
-    machine = config.get('worker.machine_id', '').strip()
-    slots = [part.strip() for part in config.get('worker.slot_ids', '').split(',')]
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', machine):
-        raise ValueError('configure worker.machine_id')
-    if (len(slots) != 1 or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', slots[0]) or
-            len(machine + '-' + slots[0]) > 64):
-        raise ValueError('smoke test requires exactly one worker.slot_ids entry')
+    machine, slots, _output = slot_settings(config)
+    if len(slots) != 1:
+        raise ValueError('smoke test requires worker.slots=1')
     revision = config.get('smoke.revision', '').strip()
     if not re.fullmatch(r'[0-9]{1,20}', revision):
         raise ValueError('configure smoke.revision to match the Server')

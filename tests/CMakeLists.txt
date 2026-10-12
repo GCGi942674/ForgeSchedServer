@@ -112,3 +112,17 @@ add_test(NAME test_intranet_smoke COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_intranet_smoke.py
   $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR})
 set_tests_properties(test_intranet_smoke PROPERTIES TIMEOUT 150)
+
+add_test(NAME test_intranet_dual_smoke COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_intranet_dual_smoke.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR})
+set_tests_properties(test_intranet_dual_smoke PROPERTIES TIMEOUT 150)
+
+add_test(NAME test_intranet_two_machine_smoke COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_intranet_two_machine_smoke.py
+  $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR})
+set_tests_properties(test_intranet_two_machine_smoke PROPERTIES TIMEOUT 150)
+
+add_test(NAME test_slot_identity COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_slot_identity.py)
+set_tests_properties(test_slot_identity PROPERTIES TIMEOUT 20)

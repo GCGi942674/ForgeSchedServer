@@ -21,7 +21,7 @@ smoke.flow=route
 smoke.target=xcku3p-ffvd900-1-i
 smoke.run_count=2
 smoke.case_timeout_seconds=5400
-smoke.expected_worker_id=novarch4-slot-01
+smoke.expected_worker_id=
 smoke.report_dir=./intranet-report
 ```
 
@@ -36,8 +36,7 @@ Configure the Worker machine's `config/forgesched.conf`:
 ```ini
 network.server_ip=<same Server LAN IP>
 server.port=18080
-worker.machine_id=novarch4
-worker.slot_ids=slot-01
+worker.slots=1
 worker.slots_root=./worker/workers_slots
 worker.output_root=./worker-output
 worker.svn_url=<GalaxCore SVN URL>

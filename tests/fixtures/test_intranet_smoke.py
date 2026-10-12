@@ -44,6 +44,10 @@ def main():
         subprocess.run(['svn', 'import', '--non-interactive', '-m', 'fixture',
                         str(base / 'slot'), svn_repo.as_uri()], check=True,
                        stdout=subprocess.DEVNULL)
+        legacy_copy = base / 'worker-slots/fixture-slot-01-slot-01/galaxcore'
+        legacy_copy.parent.mkdir(parents=True)
+        subprocess.run(['svn', 'checkout', '--non-interactive', svn_repo.as_uri(),
+                        str(legacy_copy)], check=True, stdout=subprocess.DEVNULL)
         template = base / 'templates'
         template.mkdir()
         (template / 'route.json').write_text(json.dumps(
@@ -60,7 +64,7 @@ def main():
             'server.artifact_root': str(base / 'artifacts'),
             'server.templates_dir': str(template),
             'tools.server_binary': str(server_binary),
-            'worker.machine_id': 'fixture', 'worker.slot_ids': 'slot-1',
+            'worker.slots': '1',
             'worker.slots_root': str(base / 'worker-slots'),
             'worker.output_root': str(base / 'output'),
             'worker.svn_url': svn_repo.as_uri(),
@@ -70,7 +74,7 @@ def main():
             'smoke.revision': '58231', 'smoke.case': 'cases/success/run.tcl',
             'smoke.flow': 'route', 'smoke.target': 'fixture', 'smoke.run_count': '2',
             'smoke.case_timeout_seconds': '30',
-            'smoke.expected_worker_id': 'fixture-slot-1',
+            'smoke.expected_worker_id': 'fixture-slot1',
             'smoke.report_dir': str(base / 'reports'),
             'smoke.connect_wait_seconds': '60', 'smoke.wait_seconds': '120',
         }
@@ -78,6 +82,7 @@ def main():
                                   for key, value in settings.items()), encoding='utf-8')
         env = os.environ.copy()
         env['FORGESCHED_CONFIG'] = str(config)
+        env['FORGESCHED_MACHINE_NAME'] = 'fixture'
         server = worker = None
         try:
             with (base / 'server-script.log').open('w+') as server_output, \
@@ -110,7 +115,9 @@ def main():
             assert len(server_report['tasks']) == len(worker_report['task_results']) == 2
             assert all(item['execution']['case_status'] == 'PASS'
                        for item in server_report['tasks'])
-            assert (base / 'worker-slots/fixture-slot-1/galaxcore/.svn').is_dir()
+            assert (base / 'worker-slots/fixture-slot1/galaxcore/.svn').is_dir()
+            assert not legacy_copy.exists()
+            assert not worker_report['svn_checkout_started']
         finally:
             stop_group(server)
             stop_group(worker)

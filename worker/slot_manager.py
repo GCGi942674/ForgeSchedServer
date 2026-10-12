@@ -13,23 +13,24 @@ import time
 
 from recovery_journal import remove, write_json
 from runtime_config import load_config
+from slot_identity import machine_identity, migrate_legacy_slots, slot_names
 
 
 VALID_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z')
 
 
 def slot_settings(config):
-    machine = config.get('worker.machine_id', '')
-    raw = config.get('worker.slot_ids', '')
-    slots = [part.strip() for part in raw.split(',')]
-    if (not VALID_ID.fullmatch(machine) or not slots or
-            any(not VALID_ID.fullmatch(slot) or
-                not VALID_ID.fullmatch(machine + '-' + slot) for slot in slots) or
-            len(slots) != len(set(slots)) or len(slots) > 128):
-        raise ValueError('configure worker.machine_id and unique worker.slot_ids (combined ID <=64)')
+    try:
+        count = int(config.get('worker.slots', ''))
+    except ValueError:
+        raise ValueError('configure worker.slots as a number from 1 to 128')
+    slots = slot_names(count)
     if config.get('worker.checkout_parallelism', '1') != '1':
         raise ValueError('worker.checkout_parallelism currently supports only 1')
     output = Path(config.get('worker.output_root') or './worker-output').expanduser().resolve()
+    machine = machine_identity(output)['name']
+    if not all(VALID_ID.fullmatch(machine + '-' + slot) for slot in slots):
+        raise ValueError('generated Worker ID exceeds 64 characters')
     return machine, slots, output
 
 
@@ -41,6 +42,7 @@ def identity_lock_path(output, worker_id):
 class SlotManager:
     def __init__(self, config, demo=False, demo_seconds=3):
         self.machine, self.desired, self.output_root = slot_settings(config)
+        self.slots_root = Path(config.get('worker.slots_root') or './worker/workers_slots').expanduser().resolve()
         self.demo, self.demo_seconds = demo, demo_seconds
         self.machine_root = self.output_root / self.machine
         self.machine_root.mkdir(parents=True, exist_ok=True)
@@ -52,6 +54,12 @@ class SlotManager:
             os.close(fd)
             raise RuntimeError('another manager owns this machine/output root')
         self.lock_fd = fd
+        try:
+            migrate_legacy_slots(self.slots_root, self.output_root,
+                                 self.machine, self.desired)
+        except BaseException:
+            os.close(fd)
+            raise
         self.children = {}
         self.failures = {}
         self.restart_after = {}
@@ -101,8 +109,10 @@ class SlotManager:
     def reload_config(self):
         config = load_config()
         machine, slots, output = slot_settings(config)
-        if machine != self.machine or output != self.output_root:
-            raise ValueError('machine ID and output root cannot change while running')
+        slots_root = Path(config.get('worker.slots_root') or './worker/workers_slots').expanduser().resolve()
+        if machine != self.machine or output != self.output_root or slots_root != self.slots_root:
+            raise ValueError('machine identity and roots cannot change while running')
+        migrate_legacy_slots(self.slots_root, self.output_root, self.machine, slots)
         for slot in self.desired:
             if slot not in slots and slot in self.children:
                 self.drain(slot)
@@ -155,11 +165,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--demo', action='store_true')
     parser.add_argument('--demo-seconds', type=float, default=3)
+    parser.add_argument('--migration-preview', action='store_true',
+                        help='show legacy SVN copies that would be reused, then exit')
     args = parser.parse_args()
     if not 0 <= args.demo_seconds <= 3600:
         parser.error('invalid demo duration')
     try:
-        manager = SlotManager(load_config(), args.demo, args.demo_seconds)
+        config = load_config()
+        if args.migration_preview:
+            machine, slots, output = slot_settings(config)
+            root = Path(config.get('worker.slots_root') or './worker/workers_slots').expanduser().resolve()
+            migrate_legacy_slots(root, output, machine, slots, preview=True)
+            return 0
+        manager = SlotManager(config, args.demo, args.demo_seconds)
     except (OSError, ValueError, RuntimeError) as error:
         parser.error(str(error))
 
