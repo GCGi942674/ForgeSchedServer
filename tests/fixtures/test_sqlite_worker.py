@@ -70,8 +70,9 @@ def main():
         config.write_text("server.bind_ip=127.0.0.1\nserver.port={}\n"
                           "server.io_threads=2\nserver.worker_threads=2\n"
                           "network.server_ip=127.0.0.1\nlog.level=WARN\n"
-                          "log.dir={}\ndatabase.path={}\nworker.output_dir={}\n".format(
-                              port, root / "logs", root / "state.db", root / "output"),
+                          "log.dir={}\ndatabase.path={}\nworker.output_dir={}\n"
+                          "server.log_archive_root={}\n".format(
+                              port, root / "logs", root / "state.db", root / "output", root / "archive"),
                           encoding="utf-8")
         env = os.environ.copy()
         env["FORGESCHED_CONFIG"] = str(config)
@@ -102,6 +103,50 @@ def main():
                 time.sleep(0.1)
             else:
                 raise RuntimeError("worker result timed out")
+            run_id = result["result"]["run_id"]
+            assert run_id
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                listing = request(port, "query_logs", {"task_id": task_id, "run_id": run_id})
+                assert listing["code"] == 0, listing
+                files = {item["name"]: item for item in listing["result"]["items"]}
+                if all(name in files and files[name]["complete"] for name in
+                       ("stdout.log", "stderr.log", "result.json")):
+                    break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError("worker logs timed out")
+            page = request(port, "read_log", {"task_id": task_id, "run_id": run_id,
+                           "name": "stdout.log", "offset": 0, "limit": 16384})
+            assert page["code"] == 0, page
+            assert b"demo stdout" in bytes.fromhex(page["result"]["data_hex"])
+            denied = request(port, "read_log", {"task_id": task_id,
+                             "run_id": "wrong-run", "name": "stdout.log",
+                             "offset": 0, "limit": 16})
+            assert denied["code"] != 0
+            stop(worker)
+            worker = subprocess.Popen([sys.executable, "-u", worker_script,
+                                       "--worker-id", "p11-demo", "--demo",
+                                       "--demo-seconds", "0.1", "--demo-exit-code", "7"],
+                                      cwd=str(root), env=env,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            failed = request(port, "submit_task", {"task_type": "REGRESSION",
+                "target": "demo-failure", "revision": "18925", "payload": {}})
+            assert failed["code"] == 0, failed
+            failed_id = failed["result"]["task_id"]
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                failed_query = request(port, "query_task", {"task_id": failed_id})
+                if failed_query["result"]["status"] == "FAILED":
+                    failed_run = failed_query["result"]["run_id"]
+                    logs = request(port, "query_logs", {"task_id": failed_id,
+                                    "run_id": failed_run})
+                    files = {item["name"]: item for item in logs["result"]["items"]}
+                    if "result.json" in files and files["result.json"]["complete"]:
+                        break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError("failed Worker log upload timed out")
             stop(worker)
             worker = None
             stop(server)
@@ -110,6 +155,8 @@ def main():
             wait_server(port, server)
             restored = request(port, "query_task", {"task_id": task_id})
             assert restored["code"] == 0 and restored["result"]["status"] == "SUCCEEDED"
+            archived = request(port, "query_logs", {"task_id": task_id, "run_id": run_id})
+            assert archived["code"] == 0 and len(archived["result"]["items"]) >= 3
             replay = request(port, "submit_task", {"task_type": "REGRESSION",
                 "target": "demo", "revision": "18925", "payload": {},
                 "submission_key": "sqlite-worker-smoke"})

@@ -17,6 +17,8 @@ std::string toString(MessageType type) {
         case MessageType::QUERY_REGRESSION: return "query_regression";
         case MessageType::QUERY_PROGRESS: return "query_progress";
         case MessageType::QUERY_ROLLBACK: return "query_rollback";
+        case MessageType::QUERY_LOGS: return "query_logs";
+        case MessageType::READ_LOG: return "read_log";
         case MessageType::WORKER_REGISTER: return "worker_register";
         case MessageType::WORKER_HEARTBEAT: return "worker_heartbeat";
         case MessageType::WORKER_RECOVER: return "worker_recover";
@@ -24,6 +26,7 @@ std::string toString(MessageType type) {
         case MessageType::TASK_ASSIGN:    return "task_assign";
         case MessageType::TASK_START:     return "task_start";
         case MessageType::TASK_RESULT:    return "task_result";
+        case MessageType::LOG_APPEND:     return "log_append";
         case MessageType::RESPONSE:       return "response";
         default:                          return "unknown";
     }
@@ -43,6 +46,8 @@ MessageType messageTypeFromString(const std::string& value) {
         {"query_regression", MessageType::QUERY_REGRESSION},
         {"query_progress", MessageType::QUERY_PROGRESS},
         {"query_rollback", MessageType::QUERY_ROLLBACK},
+        {"query_logs", MessageType::QUERY_LOGS},
+        {"read_log", MessageType::READ_LOG},
         {"worker_register", MessageType::WORKER_REGISTER},
         {"worker_heartbeat", MessageType::WORKER_HEARTBEAT},
         {"worker_recover", MessageType::WORKER_RECOVER},
@@ -50,6 +55,7 @@ MessageType messageTypeFromString(const std::string& value) {
         {"task_assign", MessageType::TASK_ASSIGN},
         {"task_start", MessageType::TASK_START},
         {"task_result", MessageType::TASK_RESULT},
+        {"log_append", MessageType::LOG_APPEND},
         {"response", MessageType::RESPONSE}
     };
 

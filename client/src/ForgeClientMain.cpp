@@ -31,6 +31,8 @@ void usage() {
               << "  progress --target TARGET [--flow PROFILE] [--limit 1..20] [--before-revision REV]\n"
               << "  rollback --target TARGET --from REV --to REV [--flow PROFILE]\n"
               << "           [--limit 1..50] [--after-task-id TASK_ID]\n"
+              << "  logs TASK_ID --run-id RUN_ID\n"
+              << "  log TASK_ID --run-id RUN_ID --name NAME [--offset BYTE] [--limit 1..16384]\n"
               << "One JSON response on stdout; exit 0=OK, 2=server error, 1=transport/protocol error, 64=usage.\n"
               << "No automatic retries. Batch cancel stops queued cases; in-flight cases finish.\n";
 }
@@ -43,11 +45,13 @@ int main(int argc, char** argv) {
         std::string command, target, revision, id, case_path, flow, batch_id;
         std::string from_revision, to_revision, before_revision;
         std::string status_filter, machine_filter, after_cursor;
+        std::string run_id, log_name;
         int port = Config::instance().getInt("server.port", 0);
         int timeout = Config::instance().getInt("network.timeout_ms", 0);
         int priority = 0, case_timeout = 0, limit = 0;
         uint64_t before = 0;
         uint64_t after_task_id = 0;
+        uint64_t log_offset = 0;
         std::set<std::string> seen;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -75,6 +79,9 @@ int main(int argc, char** argv) {
                 else if (arg == "--status") status_filter = value;
                 else if (arg == "--machine-id") machine_filter = value;
                 else if (arg == "--after") after_cursor = value;
+                else if (arg == "--run-id") run_id = value;
+                else if (arg == "--name") log_name = value;
+                else if (arg == "--offset") log_offset = number<uint64_t>(value);
                 else throw UsageError("unknown option: " + arg);
             } else if (command.empty()) command = arg;
             else if (id.empty()) id = arg;
@@ -171,6 +178,27 @@ int main(int argc, char** argv) {
                 filter["to_revision"] = to_revision;
                 if (seen.count("--after-task-id")) filter["after_task_id"] = after_task_id;
                 response = client.queryRollback(filter);
+            }
+        } else if (command == "logs" || command == "log") {
+            const std::set<std::string> allowed = command == "logs" ?
+                std::set<std::string>{"--host", "--port", "--timeout-ms", "--run-id"} :
+                std::set<std::string>{"--host", "--port", "--timeout-ms", "--run-id",
+                                      "--name", "--offset", "--limit"};
+            for (const auto& option : seen)
+                if (!allowed.count(option)) throw UsageError("invalid log option: " + option);
+            if (id.empty() || run_id.empty()) throw UsageError("task id and --run-id required");
+            const auto task_id = number<uint64_t>(id);
+            if (!task_id) throw UsageError("task id must be positive");
+            nlohmann::json query = {{"task_id", task_id}, {"run_id", run_id}};
+            if (command == "logs") {
+                response = client.request(Protocol::MessageType::QUERY_LOGS, query);
+            } else {
+                if (log_name.empty() || (seen.count("--limit") && (limit < 1 || limit > 16384)))
+                    throw UsageError("log requires --name and limit 1..16384");
+                query["name"] = log_name;
+                query["offset"] = log_offset;
+                query["limit"] = seen.count("--limit") ? limit : 8192;
+                response = client.request(Protocol::MessageType::READ_LOG, query);
             }
         } else if (command == "query" || command == "cancel" ||
                    command == "query-batch" || command == "cancel-batch") {

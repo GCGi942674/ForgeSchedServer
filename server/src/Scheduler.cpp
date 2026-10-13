@@ -150,6 +150,19 @@ TaskId Scheduler::nextTaskId() const {
     return maximum + 1;
 }
 
+std::optional<WorkerId> Scheduler::archiveOwner(TaskId id, const std::string& run_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = tasks_.find(id);
+    if (it == tasks_.end() || run_id.empty()) return std::nullopt;
+    const auto& task = it->second;
+    if (task.getRunId() == run_id &&
+        (task.getStatus() == TaskStatus::SUCCEEDED ||
+         task.getStatus() == TaskStatus::FAILED || task.getStatus() == TaskStatus::TIMEOUT))
+        return task.getWorkerId();
+    if (store_) return store_->archiveOwner(id, run_id);
+    return std::nullopt;
+}
+
 static std::string newRunId(TaskId id) {
     std::random_device source;
     std::ostringstream result;

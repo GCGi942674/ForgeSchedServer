@@ -12,6 +12,7 @@
 #include "protocol/dto/WorkerDTO.h"
 #include "protocol/dto/Response.h"
 #include "regression/RegressionService.h"
+#include "log/RunLogArchive.h"
 
 namespace ForgeSched {
 
@@ -40,6 +41,7 @@ public:
 
     ProtocolMessage handle(const ProtocolMessage& request);
     void holdWorker(const WorkerId& id) { scheduler_.holdWorker(id); }
+    size_t pruneLogs(int days) { return log_archive_.pruneOlderThan(days); }
 
     ProtocolRouter(const ProtocolRouter&) = delete;
     ProtocolRouter& operator=(const ProtocolRouter&) = delete;
@@ -59,6 +61,7 @@ private:
     WorkerManager& worker_manager_;
     SchedulingDriver& scheduling_driver_;
     RegressionService regression_service_;
+    RunLogArchive log_archive_;
 };
 
 } // namespace ForgeSched::Protocol

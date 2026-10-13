@@ -19,6 +19,7 @@ public:
     void shutdown();
     void setLogDirectory(const std::string& dir);
     void setLevel(LogLevel level);
+    size_t pruneOldLogs(int days);
 
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;

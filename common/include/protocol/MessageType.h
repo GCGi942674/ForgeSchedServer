@@ -18,6 +18,8 @@ enum class MessageType {
     QUERY_REGRESSION,
     QUERY_PROGRESS,
     QUERY_ROLLBACK,
+    QUERY_LOGS,
+    READ_LOG,
 
     WORKER_REGISTER,
     WORKER_HEARTBEAT,
@@ -27,6 +29,7 @@ enum class MessageType {
     TASK_ASSIGN,
     TASK_START,
     TASK_RESULT,
+    LOG_APPEND,
 
     RESPONSE,
 

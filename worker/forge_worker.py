@@ -21,9 +21,15 @@ from process_executor import ProcessExecutor
 from pjtest_adapter import PJtestAdapter
 from runtime_config import load_config
 from recovery_journal import write_json, remove
+from log_retention import prune_worker_logs
 
 MAX_FRAME = 1024 * 1024
 _SLOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+_RUN_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+_LOG_NAMES = ("stdout.log", "stderr.log", "result.env", "result.json",
+              "flow_config", "evidence.run", "runner.log", "case-run.log")
+_LOG_CHUNK = 16384
+_LOG_LIMIT = 1024 * 1024 * 1024
 
 
 class TransportError(ConnectionError):
@@ -60,6 +66,9 @@ class Worker:
         self.assigned = None
         self.process = None
         self.next_reconnect = 0
+        self.next_log_retry = 0
+        self.retention_days = getattr(args, "retention_days", 30)
+        self.next_log_prune = 0
         self.draining = False
         self.executor = ProcessExecutor(self.heartbeat)
         self.executor.before_launch = self.before_launch
@@ -104,6 +113,15 @@ class Worker:
                 self.connect()
             self.acknowledge_drain()
             self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+            if self.assigned is None and time.monotonic() >= self.next_log_retry:
+                self.next_log_retry = time.monotonic() + 15
+                self.try_flush_logs()
+            if self.assigned is None and time.monotonic() >= self.next_log_prune:
+                self.next_log_prune = time.monotonic() + 3600
+                try:
+                    prune_worker_logs(self.args.output, self.retention_days)
+                except (OSError, ValueError, RuntimeError) as error:
+                    print("[WORKER] log retention deferred: " + str(error), flush=True)
         except TransportError as error:
             if self.sock is not None:
                 print("[WORKER] connection lost; execution continues: " + str(error), flush=True)
@@ -149,6 +167,7 @@ class Worker:
         if action not in ("ready", "resume"):
             raise RuntimeError("recovery blocked; inspect server task and local journal: " + repr(result))
         print("[WORKER] connected; recovery=" + action, flush=True)
+        self.try_flush_logs()
 
     def pending_path(self):
         identity = hashlib.sha256(self.args.worker_id.encode("utf-8")).hexdigest()[:24]
@@ -191,6 +210,85 @@ class Worker:
             os.fsync(directory_fd)
         finally:
             os.close(directory_fd)
+
+    def queue_logs(self, assignment, directory):
+        """Keep an fsynced local upload manifest until every file is acknowledged."""
+        run_id = assignment.get("run_id", "")
+        if not _RUN_ID.fullmatch(run_id):
+            return
+        files = []
+        for name in _LOG_NAMES:
+            source = directory / "evidence" / "run" if name == "evidence.run" else directory / name
+            if source.is_file() and not source.is_symlink():
+                if source.stat().st_size <= _LOG_LIMIT:
+                    files.append(name)
+                else:
+                    print("[WORKER] log too large for archive: " + name, flush=True)
+        if not files:
+            return
+        path = self.args.output / ("pending-logs-" + run_id + ".json")
+        if path.exists() or path.is_symlink():
+            raise RuntimeError("duplicate log outbox: " + str(path))
+        write_json(path, dict(task_id=assignment["task_id"], run_id=run_id,
+                              worker_id=self.args.worker_id, directory=str(directory.resolve()),
+                              files=files))
+
+    def flush_logs(self):
+        for path in sorted(self.args.output.glob("pending-logs-*.json")):
+            if path.is_symlink():
+                raise RuntimeError("unsafe log outbox: " + str(path))
+            entry = json.loads(path.read_text(encoding="utf-8"))
+            run_id = entry.get("run_id")
+            directory = Path(entry.get("directory", ""))
+            if (not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id) or
+                    path.name != "pending-logs-" + run_id + ".json" or
+                    entry.get("worker_id") != self.args.worker_id or
+                    type(entry.get("task_id")) is not int or entry["task_id"] <= 0 or
+                    not directory.is_dir() or directory.is_symlink() or
+                    self.args.output.resolve() not in directory.resolve().parents or
+                    not isinstance(entry.get("files"), list) or
+                    any(name not in _LOG_NAMES for name in entry["files"])):
+                raise RuntimeError("invalid log outbox: " + str(path))
+            for name in entry["files"]:
+                source = directory / "evidence" / "run" if name == "evidence.run" else directory / name
+                if source.is_symlink() or not source.is_file() or source.stat().st_size > _LOG_LIMIT:
+                    raise RuntimeError("log source changed: " + str(source))
+                size = source.stat().st_size
+                offset = 0
+                heartbeat_at = time.monotonic()
+                with source.open("rb") as stream:
+                    while True:
+                        stream.seek(offset)
+                        block = stream.read(_LOG_CHUNK)
+                        complete = offset + len(block) == size
+                        response = self.request("log_append", dict(
+                            task_id=entry["task_id"], run_id=run_id,
+                            worker_id=self.args.worker_id, name=name,
+                            offset=offset, data_hex=block.hex(), complete=complete))
+                        next_offset = response.get("next_offset")
+                        if type(next_offset) is not int or not 0 <= next_offset <= size:
+                            raise RuntimeError("invalid log upload offset")
+                        if response.get("complete") is True:
+                            if next_offset != size:
+                                raise RuntimeError("server log length differs from local file")
+                            break
+                        if next_offset == offset and not block:
+                            raise RuntimeError("log upload made no progress")
+                        offset = next_offset
+                        if time.monotonic() - heartbeat_at >= 10:
+                            self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+                            heartbeat_at = time.monotonic()
+            remove(path)
+
+    def try_flush_logs(self):
+        try:
+            if self.sock is not None:
+                self.flush_logs()
+        except TransportError as error:
+            print("[WORKER] log upload deferred: " + str(error), flush=True)
+            self.disconnect()
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print("[WORKER] log archive needs inspection: " + str(error), flush=True)
 
     def receive(self, deadline):
         while True:
@@ -303,11 +401,16 @@ class Worker:
                       status=status, message=json.dumps(result))
         if assignment.get("run_id"):
             report["run_id"] = assignment["run_id"]
+        try:
+            self.queue_logs(assignment, directory)
+        except (RuntimeError, OSError, ValueError) as error:
+            print("[WORKER] log archive queue failed: " + str(error), flush=True)
         self.save_report(report)
         # The server can send the next assignment before acknowledging this result.
         self.assigned = None
         if self.sock is not None:
             self.flush_report()
+            self.try_flush_logs()
         print(json.dumps(result), flush=True)
 
     def run(self):
@@ -404,6 +507,9 @@ def main():
         args.reconnect_seconds = float(config.get("worker.reconnect_seconds", "2"))
         if not math.isfinite(args.reconnect_seconds) or not 0.05 <= args.reconnect_seconds <= 60:
             raise ValueError("worker.reconnect_seconds must be between 0.05 and 60")
+        args.retention_days = int(config.get("log.retention_days", "30"))
+        if not 1 <= args.retention_days <= 3650:
+            raise ValueError("log.retention_days must be between 1 and 3650")
         explicit_config = args.pjtest_config is not None
         if not explicit_config and not args.demo:
             args.pjtest_config = shared_pjtest_settings(config, args.worker_id, args.output)

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <random>
 #include <sstream>
+#include <limits>
 
 namespace {
 const std::string& serverInstanceId() {
@@ -95,6 +96,7 @@ ProtocolRouter::ProtocolRouter(
           Config::instance().getBool("cache.regression.enabled", false),
           static_cast<size_t>(std::max(1, Config::instance().getInt("cache.regression.max_entries", 1000))),
           std::max(1, Config::instance().getInt("cache.regression.ttl_seconds", 5)))
+    , log_archive_(Config::instance().getString("server.log_archive_root", "./data/run-logs"))
 {
 }
 
@@ -120,6 +122,54 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
     ProtocolMessage response;
 
     switch (request.type) {
+        case MessageType::LOG_APPEND:
+        case MessageType::QUERY_LOGS:
+        case MessageType::READ_LOG: {
+            const auto& d = request.data;
+            const bool upload = request.type == MessageType::LOG_APPEND;
+            const bool read = request.type == MessageType::READ_LOG;
+            const size_t expected = upload ? 7 : read ? 5 : 2;
+            if (!d.is_object() || d.size() != expected ||
+                !d.contains("task_id") || !d["task_id"].is_number_unsigned() ||
+                d["task_id"].get<uint64_t>() == 0 ||
+                !d.contains("run_id") || !d["run_id"].is_string() ||
+                !RunLogArchive::validRunId(d["run_id"].get<std::string>()))
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid log identity");
+            const auto task_id = d["task_id"].get<uint64_t>();
+            const auto run_id = d["run_id"].get<std::string>();
+            const auto task = task_service_.getTask(task_id);
+            if (!task) return buildResponse(request, ResponseCode::NOT_FOUND, "task not found");
+            const auto owner = scheduler_.archiveOwner(task_id, run_id);
+            if (!owner) return buildResponse(request, ResponseCode::INVALID_STATE, "run is not finished");
+            try {
+                if (!upload && !read)
+                    return buildResponse(request, ResponseCode::OK, "ok",
+                                         log_archive_.list(task_id, run_id));
+                if (!d.contains("name") || !d["name"].is_string() ||
+                    !RunLogArchive::validName(d["name"].get<std::string>()) ||
+                    !d.contains("offset") || !d["offset"].is_number_unsigned())
+                    return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid log file or offset");
+                const auto name = d["name"].get<std::string>();
+                const auto offset = d["offset"].get<uint64_t>();
+                if (read) {
+                    if (!d.contains("limit") || !d["limit"].is_number_unsigned() ||
+                        d["limit"].get<uint64_t>() < 1 || d["limit"].get<uint64_t>() > 16384)
+                        return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid log read limit");
+                    return buildResponse(request, ResponseCode::OK, "ok", log_archive_.read(
+                        task_id, run_id, name, offset, d["limit"].get<size_t>()));
+                }
+                if (!d.contains("worker_id") || !d["worker_id"].is_string() ||
+                    *owner != d["worker_id"].get<std::string>() ||
+                    !d.contains("data_hex") || !d["data_hex"].is_string() ||
+                    !d.contains("complete") || !d["complete"].is_boolean())
+                    return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid log upload");
+                return buildResponse(request, ResponseCode::OK, "ok", log_archive_.append(
+                    task_id, run_id, name, offset, d["data_hex"].get<std::string>(),
+                    d["complete"].get<bool>()));
+            } catch (const std::invalid_argument& error) {
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, error.what());
+            }
+        }
         case MessageType::QUERY_TASKS:
         case MessageType::QUERY_WORKERS:
         case MessageType::QUERY_CAPABILITIES: {

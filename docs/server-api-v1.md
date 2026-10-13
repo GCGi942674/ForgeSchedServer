@@ -43,6 +43,8 @@ rejected. Lists return empty arrays and null next cursors when exhausted.
 | query_regression | revision or case or batch_id required; optional flow,limit,before_task_id | filters,total,counts,items,has_more,next_before_task_id,snapshot_generation; task_id descending |
 | query_progress | target required; optional flow,limit,before_revision | target,flow,total_revisions,revisions,has_more,next_before_revision,snapshot_generation; numeric revision descending |
 | query_rollback | target,from_revision,to_revision required; optional flow,limit,after_task_id | total,items,has_more,next_after_task_id,snapshot_generation,from_available,to_available; current_task_id ascending |
+| query_logs | task_id,run_id | archived file names, sizes and completion flags for one finished run |
+| read_log | task_id,run_id,name,offset,limit (1..16384) | binary-safe hex page, next_offset, size and completion flag |
 
 Default page size is 20; maximum 50 (progress maximum 20). Numeric cursors are
 positive uint64 integers, not strings or floats. Progress revisions are decimal
@@ -104,6 +106,10 @@ do not subtract them to infer durations when clocks are unsynchronized.
   that batch; in-flight cases finish. Returns the batch snapshot.
 - Worker registration/heartbeat/recovery/drain/start/result protocol is unchanged.
   Worker-role connections cannot use Client query APIs.
+- log_append is Worker-only and requires the bound worker_id plus a finished
+  task_id/run_id owned by that Worker. Each request carries at most 16 KiB of
+  binary evidence encoded as hex. The server returns its durable next_offset
+  for idempotent resume. Details and current evidence scope: log-archive-v1.md.
 
 No GUI, remote process cancellation, remote machine power control, authentication,
 project identity migration or durable Worker inventory is implemented by P17.

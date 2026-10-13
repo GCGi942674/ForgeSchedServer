@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <iomanip>
+#include <cctype>
 #include <ctime>
 #include <sstream>
 #include <thread>
@@ -133,6 +134,32 @@ void Logger::setLogDirectory(const std::string& dir) {
 void Logger::setLevel(LogLevel level) {
     std::lock_guard<std::mutex> lock(mutex_);
     current_level_ = level;
+}
+size_t Logger::pruneOldLogs(int days) {
+    if (days < 1 || days > 3650) throw std::invalid_argument("invalid log retention days");
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (log_dir_.empty() || std::filesystem::is_symlink(log_dir_) || !std::filesystem::is_directory(log_dir_))
+        throw std::runtime_error("unsafe log directory");
+    const auto cutoff_time = std::chrono::system_clock::now() - std::chrono::hours(24 * days);
+    const auto cutoff_t = std::chrono::system_clock::to_time_t(cutoff_time);
+    std::ostringstream cutoff_stream;
+    cutoff_stream << std::put_time(std::localtime(&cutoff_t), "%Y%m%d");
+    const auto cutoff = cutoff_stream.str();
+    size_t removed = 0;
+    for (const auto& day : std::filesystem::directory_iterator(log_dir_)) {
+        const auto date = day.path().filename().string();
+        if (day.is_symlink() || !day.is_directory() || date.size() != 8 || date >= cutoff ||
+            !std::all_of(date.begin(), date.end(), [](unsigned char c) { return std::isdigit(c); })) continue;
+        for (const char* name : {"server.log", "task.log", "error.log"}) {
+            const auto path = day.path() / name;
+            if (std::filesystem::is_regular_file(path) && !std::filesystem::is_symlink(path)) {
+                std::filesystem::remove(path);
+                ++removed;
+            }
+        }
+        if (std::filesystem::is_empty(day.path())) std::filesystem::remove(day.path());
+    }
+    return removed;
 }
 
 } // namespace ForgeSched

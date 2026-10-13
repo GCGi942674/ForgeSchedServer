@@ -196,6 +196,17 @@ std::optional<std::string> StateStore::recoveryDecision(const std::string& run_i
     return column(query.value, 0);
 }
 
+std::optional<std::string> StateStore::archiveOwner(TaskId task_id, const std::string& run_id) const {
+    Statement query(db_, "SELECT worker_id FROM task_runs WHERE task_id=? AND run_id=? "
+                         "AND status IN ('SUCCEEDED','FAILED','TIMEOUT')");
+    query.number(1, checkedId(task_id));
+    query.text(2, run_id);
+    const int step = sqlite3_step(query.value);
+    if (step == SQLITE_DONE) return std::nullopt;
+    check(step, db_);
+    return column(query.value, 0);
+}
+
 void StateStore::save(const std::vector<Task>& tasks,
                       const std::optional<std::string>& stopped_batch,
                       const std::optional<std::string>& run_status_override,

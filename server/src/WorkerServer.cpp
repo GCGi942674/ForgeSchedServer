@@ -32,8 +32,11 @@ WorkerServer::WorkerServer(bool persistent)
         const int retries = Config::instance().getInt("server.recovery_max_retries", 1);
         if (timeout < 2 || timeout > 3600 || retries < 0 || retries > 100)
             throw std::runtime_error("invalid worker recovery configuration");
-        liveness_thread_ = std::thread([this, timeout] {
+        const int retention = Config::instance().getInt("log.retention_days", 30);
+        if (retention < 1 || retention > 3650) throw std::runtime_error("invalid log.retention_days");
+        liveness_thread_ = std::thread([this, timeout, retention] {
             std::unique_lock<std::mutex> wait_lock(liveness_mutex_);
+            auto next_prune = std::chrono::steady_clock::time_point::min();
             while (!liveness_cv_.wait_for(wait_lock, std::chrono::seconds(1), [this] { return stopping_; })) {
                 wait_lock.unlock();
                 try {
@@ -41,6 +44,15 @@ WorkerServer::WorkerServer(bool persistent)
                     worker_manager_ptr_->checkTimeouts(std::chrono::seconds(timeout));
                 } catch (const std::exception& error) {
                     LOG_ERROR(LogModule::WORKER, std::string("liveness check failed: ") + error.what());
+                }
+                if (std::chrono::steady_clock::now() >= next_prune) {
+                    next_prune = std::chrono::steady_clock::now() + std::chrono::hours(1);
+                    try {
+                        router_ptr_->pruneLogs(retention);
+                        Logger::instance().pruneOldLogs(retention);
+                    } catch (const std::exception& error) {
+                        LOG_ERROR(LogModule::SERVER, std::string("log retention failed: ") + error.what());
+                    }
                 }
                 wait_lock.lock();
             }

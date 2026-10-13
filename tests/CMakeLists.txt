@@ -1,5 +1,10 @@
 # External mirror subset: these are the existing tests, not the missing
 # internal ForgeSched acceptance suite.
+add_executable(test_run_log_archive test_run_log_archive.cpp)
+target_link_libraries(test_run_log_archive PRIVATE forgesched_server_core)
+add_test(NAME test_run_log_archive COMMAND test_run_log_archive)
+set_tests_properties(test_run_log_archive PROPERTIES TIMEOUT 30)
+
 message(STATUS "External mirror: building available tests only")
 foreach(name test_logging test_thread_pool test_EchoClient test_EchoServer)
   add_executable(${name} ${name}.cpp)
@@ -76,6 +81,9 @@ set_tests_properties(test_sqlite_persistence PROPERTIES TIMEOUT 45)
 add_test(NAME test_clock COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_clock.py)
 set_tests_properties(test_clock PROPERTIES TIMEOUT 45)
+add_test(NAME test_log_retention COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/fixtures/test_log_retention.py)
+set_tests_properties(test_log_retention PROPERTIES TIMEOUT 30)
+
 
 add_test(NAME test_sqlite_worker COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_sqlite_worker.py

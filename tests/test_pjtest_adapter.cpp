@@ -106,6 +106,10 @@ int main(int argc, char** argv) { return testMain([&] {
                 CHECK(record["raw_exit_code"] == 7 && record["exit_code"] == 0);
             if (std::string(mode) == "missing_artifact")
                 CHECK(record["reason"].get<std::string>().find("artifact not found") != std::string::npos);
+            if (std::string(mode) != "missing_artifact") {
+                CHECK(std::filesystem::is_regular_file(file.parent_path() / "runner.log"));
+                CHECK(std::filesystem::is_regular_file(file.parent_path() / "case-run.log"));
+            }
             found = true;
         }
         CHECK(found);

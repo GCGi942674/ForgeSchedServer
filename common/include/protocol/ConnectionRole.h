@@ -10,13 +10,15 @@ constexpr bool isClientRequest(MessageType type) {
            type == MessageType::QUERY_CAPABILITIES ||
            type == MessageType::CANCEL_TASK || type == MessageType::QUERY_BATCH ||
            type == MessageType::CANCEL_BATCH || type == MessageType::QUERY_REGRESSION ||
-           type == MessageType::QUERY_PROGRESS || type == MessageType::QUERY_ROLLBACK;
+           type == MessageType::QUERY_PROGRESS || type == MessageType::QUERY_ROLLBACK ||
+           type == MessageType::QUERY_LOGS || type == MessageType::READ_LOG;
 }
 constexpr bool isWorkerRequest(MessageType type) {
     return type == MessageType::WORKER_REGISTER || type == MessageType::WORKER_HEARTBEAT ||
            type == MessageType::WORKER_RECOVER ||
            type == MessageType::WORKER_DRAIN ||
-           type == MessageType::TASK_START || type == MessageType::TASK_RESULT;
+           type == MessageType::TASK_START || type == MessageType::TASK_RESULT ||
+           type == MessageType::LOG_APPEND;
 }
 // Single inbound permission policy. Roles are protocol separation, not authentication.
 constexpr bool isAllowed(ConnectionRole role, MessageType type) {

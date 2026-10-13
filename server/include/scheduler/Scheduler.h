@@ -59,6 +59,8 @@ public:
     std::optional<bool> dispatchAssignment(const TaskAssignment&, WorkerDispatcher&);
 
     std::optional<Task> getTask(TaskId id) const;
+    // Resolve a completed current or persisted historical run to its Worker.
+    std::optional<WorkerId> archiveOwner(TaskId id, const std::string& run_id) const;
     std::vector<Task> getTasks() const;
     // The tasks and generation are captured under the same lock.
     std::pair<uint64_t, std::vector<Task>> taskSnapshot() const;

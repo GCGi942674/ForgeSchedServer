@@ -535,6 +535,25 @@ class PJtestAdapter:
                             if path.is_file() and not path.is_symlink():
                                 with path.open("rb") as src, (evidence / name).open("xb") as dst:
                                     dst.write(src.read(8 * 1024 * 1024))
+                        # The randomized namespace isolates this run's runner
+                        # logs from other cases sharing the SVN checkout.
+                        namespace = result.get("namespace")
+                        if namespace:
+                            runtime = (self.work_root / "vivado_runner" / "runtime" /
+                                       "workspaces" / namespace)
+                            case_rel = case_run.parent.relative_to(self.work_root)
+                            sources = (("runner.log", runtime / "logs" / "run.log"),
+                                       ("case-run.log", runtime / "status" / case_rel / "run.log"))
+                            for local_name, log_source in sources:
+                                if (runtime.is_symlink() or log_source.is_symlink() or
+                                        any(parent.is_symlink() for parent in log_source.parents
+                                            if parent == runtime or runtime in parent.parents)):
+                                    continue
+                                try:
+                                    if log_source.is_file() and log_source.stat().st_size <= 1024 ** 3:
+                                        shutil.copyfile(str(log_source), str(directory / local_name))
+                                except OSError as error:
+                                    print("[WORKER] runner log capture failed: " + str(error), flush=True)
                         try:
                             clean_code = self._run_clean(env, output)
                         except Exception as error:

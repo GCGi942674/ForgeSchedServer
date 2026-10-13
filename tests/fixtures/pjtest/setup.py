@@ -31,6 +31,10 @@ case_dir=$(dirname "$1")
 mode=$(basename "$case_dir")
 status_dir="vivado_runner/runtime/workspaces/$VIVADO_RUNNER_NAMESPACE/status/cases/$mode"
 mkdir -p "$status_dir"
+runner_dir="vivado_runner/runtime/workspaces/$VIVADO_RUNNER_NAMESPACE/logs"
+mkdir -p "$runner_dir"
+printf 'runner mode=%s\n' "$mode" > "$runner_dir/run.log"
+printf 'case mode=%s\n' "$mode" > "$status_dir/run.log"
 if [ "$mode" = timeout ]; then sleep 2; exit 124; fi
 if [ "$mode" = process_fail ]; then exit 7; fi
 if [ "$mode" = stale ] || [ "$mode" = missing ]; then exit 0; fi

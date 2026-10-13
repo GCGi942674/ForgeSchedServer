@@ -28,6 +28,8 @@ public:
     std::optional<std::pair<TaskId, std::string>> findSubmission(const std::string& key) const;
     std::optional<std::string> recoveryDecision(const std::string& run_id,
                                                TaskId task_id, const std::string& worker_id) const;
+    // Only completed attempts may accept or expose archived evidence.
+    std::optional<std::string> archiveOwner(TaskId task_id, const std::string& run_id) const;
     // All task and batch changes are one durable transaction. Throws on failure.
     void save(const std::vector<Task>& tasks,
               const std::optional<std::string>& stopped_batch = std::nullopt,

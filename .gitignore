@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 workers_slots/
 /worker-output/
+/data/run-logs/
 
 # Object files & binaries
 *.cmake
