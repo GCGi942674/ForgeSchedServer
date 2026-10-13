@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import os, sys, re, pdb
+import subprocess
 import shutil
 import tempfile
 import zipfile
 from contextlib import contextmanager
+
+SDF_SORT_SCRIPT = "/home/zhenlei/projects/ForgeSched/sort_sdf.py"
 
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -63,6 +66,8 @@ def clean_sdf(path: str):
   with open(path, "r", encoding="utf-8", errors="ignore") as f:
     for line in f:
       line = line.rstrip("\n")
+      if re.match(r"^\(DATE(?:\s|\))", line.strip()):
+        continue
       if line.strip():
         original.append(line)
       if not found_delayfile:
@@ -109,6 +114,16 @@ def prepare_file(path: str):
       yield prepared
 
 
+def sort_sdf_file(path: str, sorter: str, output: str):
+  result = subprocess.run(
+    [sys.executable, sorter, path, "-o", output],
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+  )
+  if result.returncode != 0:
+    raise RuntimeError(f"SDF sort failed for {path}: {result.stderr.strip()}")
+  return output
+
+
 def print_differences(log1, log2, f1, f2, to_diff):
   print("\n" + BLUE + "Differences:" + RESET)
   max_len = max(len(log1), len(log2))
@@ -137,8 +152,17 @@ def print_differences(log1, log2, f1, f2, to_diff):
 
 def VvdCmpFiles(f1, f2, to_diff=""):
   with prepare_file(f1) as prepared1, prepare_file(f2) as prepared2:
-    log1 = clean_file(prepared1)
-    log2 = clean_file(prepared2)
+    with tempfile.TemporaryDirectory() as sort_dir:
+      if os.path.splitext(prepared1)[1].lower() == ".sdf":
+        prepared1 = sort_sdf_file(
+          prepared1, SDF_SORT_SCRIPT, os.path.join(sort_dir, "first_sorted.sdf")
+        )
+      if os.path.splitext(prepared2)[1].lower() == ".sdf":
+        prepared2 = sort_sdf_file(
+          prepared2, SDF_SORT_SCRIPT, os.path.join(sort_dir, "second_sorted.sdf")
+        )
+      log1 = clean_file(prepared1)
+      log2 = clean_file(prepared2)
 
   if log1 == log2:
     print(GREEN + "Files are same" + RESET)
@@ -154,5 +178,4 @@ if __name__ == "__main__":
     print("Usage: vvdCmpFiles.py <file1> <file2>")
     sys.exit(1)
 
-  f1, f2 = sys.argv[1], sys.argv[2]
-  VvdCmpFiles(f1, f2)
+  VvdCmpFiles(sys.argv[1], sys.argv[2])
