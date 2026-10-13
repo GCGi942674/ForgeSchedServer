@@ -8,10 +8,15 @@ std::string toString(MessageType type) {
         case MessageType::SUBMIT_TASK:    return "submit_task";
         case MessageType::QUERY_TASK:     return "query_task";
         case MessageType::QUERY_STATUS:   return "query_status";
+        case MessageType::QUERY_TASKS: return "query_tasks";
+        case MessageType::QUERY_WORKERS: return "query_workers";
+        case MessageType::QUERY_CAPABILITIES: return "query_capabilities";
         case MessageType::CANCEL_TASK:    return "cancel_task";
         case MessageType::QUERY_BATCH:    return "query_batch";
         case MessageType::CANCEL_BATCH:   return "cancel_batch";
         case MessageType::QUERY_REGRESSION: return "query_regression";
+        case MessageType::QUERY_PROGRESS: return "query_progress";
+        case MessageType::QUERY_ROLLBACK: return "query_rollback";
         case MessageType::WORKER_REGISTER: return "worker_register";
         case MessageType::WORKER_HEARTBEAT: return "worker_heartbeat";
         case MessageType::WORKER_RECOVER: return "worker_recover";
@@ -29,10 +34,15 @@ MessageType messageTypeFromString(const std::string& value) {
         {"submit_task", MessageType::SUBMIT_TASK},
         {"query_task", MessageType::QUERY_TASK},
         {"query_status", MessageType::QUERY_STATUS},
+        {"query_tasks", MessageType::QUERY_TASKS},
+        {"query_workers", MessageType::QUERY_WORKERS},
+        {"query_capabilities", MessageType::QUERY_CAPABILITIES},
         {"cancel_task", MessageType::CANCEL_TASK},
         {"query_batch", MessageType::QUERY_BATCH},
         {"cancel_batch", MessageType::CANCEL_BATCH},
         {"query_regression", MessageType::QUERY_REGRESSION},
+        {"query_progress", MessageType::QUERY_PROGRESS},
+        {"query_rollback", MessageType::QUERY_ROLLBACK},
         {"worker_register", MessageType::WORKER_REGISTER},
         {"worker_heartbeat", MessageType::WORKER_HEARTBEAT},
         {"worker_recover", MessageType::WORKER_RECOVER},

@@ -31,6 +31,7 @@ public:
 
     std::optional<Worker> getWorker(const WorkerId& id) const;
     std::vector<Worker> getWorkers() const;
+    std::pair<uint64_t, std::vector<Worker>> snapshot() const;
     std::vector<Worker> getOnlineWorkers() const;
     std::vector<Worker> getAvailableWorkers() const;
 
@@ -44,6 +45,7 @@ public:
 
 private:
     mutable std::mutex mutex_;
+    uint64_t generation_{0};
     std::unordered_map<WorkerId, std::unique_ptr<Worker>> workers_;
 };
 

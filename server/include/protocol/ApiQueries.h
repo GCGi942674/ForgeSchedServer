@@ -1,0 +1,129 @@
+#pragma once
+#include "scheduler/Scheduler.h"
+#include "worker/WorkerManager.h"
+#include "nlohmann/json.hpp"
+#include <algorithm>
+#include <set>
+#include <tuple>
+
+namespace ForgeSched::Api {
+using Json = nlohmann::json;
+// Throw only validation errors here; Router converts these explicitly to code 1.
+inline void validate(const Json& q, const std::set<std::string>& keys) {
+    if (!q.is_object()) throw std::invalid_argument("query must be an object");
+    for (auto it = q.begin(); it != q.end(); ++it)
+        if (!keys.count(it.key())) throw std::invalid_argument("unknown query field");
+}
+inline std::string text(const Json& q, const char* key, size_t max) {
+    if (!q.contains(key)) return {};
+    if (!q[key].is_string()) throw std::invalid_argument("expected string filter");
+    auto s = q[key].get<std::string>();
+    if (s.empty() || s.size() > max || s.find('\0') != std::string::npos)
+        throw std::invalid_argument("invalid string filter");
+    return s;
+}
+inline uint64_t positive(const Json& q, const char* key, uint64_t fallback) {
+    if (!q.contains(key)) return fallback;
+    if (!q[key].is_number_integer() ||
+        (!q[key].is_number_unsigned() && q[key].get<int64_t>() <= 0))
+        throw std::invalid_argument("expected positive integer");
+    auto n = q[key].get<uint64_t>();
+    if (!n) throw std::invalid_argument("expected positive integer");
+    return n;
+}
+inline size_t limit(const Json& q) {
+    auto n = positive(q, "limit", 20);
+    if (n > 50) throw std::invalid_argument("limit exceeds 50");
+    return static_cast<size_t>(n);
+}
+inline Json tasks(const Json& q, const Scheduler& scheduler) {
+    validate(q, {"status", "target", "revision", "batch_id", "limit", "before_task_id"});
+    const auto count = limit(q);
+    const auto before = positive(q, "before_task_id", 0);
+    const auto status = text(q, "status", 16), target = text(q, "target", 128);
+    const auto revision = text(q, "revision", 128), batch = text(q, "batch_id", 128);
+    if (!status.empty() && !std::set<std::string>{"PENDING", "QUEUED", "ASSIGNED", "RUNNING",
+            "SUCCEEDED", "FAILED", "TIMEOUT", "CANCELLED"}.count(status))
+        throw std::invalid_argument("unknown task status");
+    auto snapshot = scheduler.taskSnapshot();
+    auto& rows = snapshot.second;
+    std::sort(rows.begin(), rows.end(), [](const Task& a, const Task& b) { return a.getId() > b.getId(); });
+    Json items = Json::array();
+    size_t total = 0; bool more = false;
+    for (const auto& t : rows) {
+        std::string task_batch;
+        const auto& payload = t.getPayload();
+        if (payload.is_object() && payload.contains("context") && payload["context"].is_object()) {
+            const auto& ctx = payload["context"];
+            if (ctx.contains("batch_id") && ctx["batch_id"].is_string()) task_batch = ctx["batch_id"].get<std::string>();
+        }
+        if ((!status.empty() && toString(t.getStatus()) != status) ||
+            (!target.empty() && t.getTarget() != target) ||
+            (!revision.empty() && t.getRevision() != revision) ||
+            (!batch.empty() && task_batch != batch)) continue;
+        ++total;
+        if (before && t.getId() >= before) continue;
+        if (items.size() == count) { more = true; continue; }
+        items.push_back({{"task_id", t.getId()}, {"task_type", toString(t.getType())},
+            {"status", toString(t.getStatus())}, {"target", t.getTarget()},
+            {"revision", t.getRevision()}, {"batch_id", task_batch},
+            {"worker_id", t.getWorkerId()}, {"run_id", t.getRunId()},
+            {"priority", t.getPriority()}, {"retry_count", t.getRetryCount()}});
+    }
+    return {{"items", items}, {"total", total}, {"has_more", more},
+        {"next_before_task_id", more ? items.back()["task_id"] : Json(nullptr)},
+        {"snapshot_generation", snapshot.first}};
+}
+inline Json workers(const Json& q, const WorkerManager& manager) {
+    validate(q, {"machine_id", "status", "limit", "after"});
+    const auto count = limit(q);
+    const auto machine = text(q, "machine_id", 256), status = text(q, "status", 16);
+    if (!status.empty() && !std::set<std::string>{"ONLINE", "OFFLINE", "DRAINING"}.count(status))
+        throw std::invalid_argument("unknown worker status");
+    using Key = std::tuple<std::string, std::string, std::string>;
+    Key after;
+    if (q.contains("after")) {
+        const auto& a = q["after"];
+        validate(a, {"machine_id", "slot_id", "worker_id"});
+        if (a.size() != 3) throw std::invalid_argument("incomplete cursor");
+        after = {text(a, "machine_id", 256), text(a, "slot_id", 256), text(a, "worker_id", 256)};
+    }
+    auto snapshot = manager.snapshot();
+    auto& rows = snapshot.second;
+    auto key = [](const Worker& w) { return Key{w.getMachineId(), w.getSlotId(), w.getId()}; };
+    std::sort(rows.begin(), rows.end(), [&](const Worker& a, const Worker& b) { return key(a) < key(b); });
+    Json items = Json::array(); size_t total = 0; bool more = false;
+    for (const auto& w : rows) {
+        if ((!machine.empty() && machine != w.getMachineId()) ||
+            (!status.empty() && status != toString(w.getStatus()))) continue;
+        ++total;
+        if (q.contains("after") && key(w) <= after) continue;
+        if (items.size() == count) { more = true; continue; }
+        items.push_back({{"worker_id", w.getId()}, {"machine_id", w.getMachineId()},
+            {"slot_id", w.getSlotId()}, {"hostname", w.getHostname()},
+            {"status", toString(w.getStatus())}, {"capacity", w.getTotalSlots()},
+            {"used", w.getUsedSlots()}, {"free", w.freeSlots()},
+            {"last_heartbeat_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+                w.getLastHeartbeat().time_since_epoch()).count()}});
+    }
+    Json cursor = nullptr;
+    if (more) {
+        const auto& w = items.back();
+        cursor = {{"machine_id", w["machine_id"]}, {"slot_id", w["slot_id"]}, {"worker_id", w["worker_id"]}};
+    }
+    return {{"items", items}, {"total", total}, {"has_more", more}, {"next_after", cursor},
+        {"snapshot_generation", snapshot.first},
+        {"inventory_scope", "current_server_process"}};
+}
+inline Json capabilities(const Json& q) {
+    validate(q, {});
+    return {{"api_version", 1}, {"protocol_version", 1},
+        {"operations", {"submit_task", "query_task", "query_tasks", "query_workers", "query_status",
+            "query_capabilities", "cancel_task", "query_batch", "cancel_batch", "query_regression",
+            "query_progress", "query_rollback"}},
+        {"limits", {{"page_size", 50}, {"progress_page_size", 20}, {"frame_bytes", 1048576}}},
+        {"features", {{"remote_cancel", false}, {"cancel_queued", true},
+            {"worker_inventory_persistent", false}, {"authentication", false},
+            {"cross_page_snapshot", false}, {"project_scope", false}}}};
+}
+} // namespace ForgeSched::Api

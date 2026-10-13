@@ -42,6 +42,10 @@ static std::string taskStatusToString(TaskStatus status) {
 
 // SubmitTaskRequest
 bool fromJson(const nlohmann::json& j, SubmitTaskRequest& out) {
+    if (!j.is_object()) return false;
+    for (auto it = j.begin(); it != j.end(); ++it)
+        if (it.key() != "task_type" && it.key() != "target" && it.key() != "revision" &&
+            it.key() != "priority" && it.key() != "payload" && it.key() != "submission_key") return false;
     if (!j.contains("task_type") || !j["task_type"].is_string()) {
         return false;
     }
@@ -92,6 +96,7 @@ nlohmann::json toJson(const SubmitTaskRequest& value) {
 
 // QueryTaskRequest
 bool fromJson(const nlohmann::json& j, QueryTaskRequest& out) {
+    if (!j.is_object() || j.size() != 1) return false;
     if (!j.contains("task_id") || !j["task_id"].is_number_unsigned()) {
         return false;
     }
@@ -107,6 +112,7 @@ nlohmann::json toJson(const QueryTaskRequest& value) {
 
 // CancelTaskRequest
 bool fromJson(const nlohmann::json& j, CancelTaskRequest& out) {
+    if (!j.is_object() || j.size() != 1) return false;
     if (!j.contains("task_id") || !j["task_id"].is_number_unsigned()) {
         return false;
     }

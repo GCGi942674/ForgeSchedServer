@@ -62,6 +62,13 @@ int main(int argc, char** argv) { return testMain([&] {
         return run(executable, std::move(args));
     };
     CHECK(run(executable, {"--help"}).code == 0);
+    auto caps = invoke({"capabilities"});
+    CHECK(caps.code == 0);
+    CHECK(nlohmann::json::parse(caps.output)["result"]["api_version"] == 1);
+    CHECK(invoke({"workers"}).code == 0);
+    CHECK(invoke({"status"}).code == 0);
+    CHECK(invoke({"tasks", "--status", "NO_SUCH_STATUS"}).code == 2);
+    CHECK(invoke({"workers", "--after", "not-json"}).code == 64);
     for (auto args : std::vector<std::vector<std::string>>{
         {}, {"query", "0"}, {"query", "-1"}, {"query", "18446744073709551616"},
         {"query", "1junk"}, {"submit", "--target", "x"}, {"query", "1", "--priority", "2"},
@@ -76,6 +83,9 @@ int main(int argc, char** argv) { return testMain([&] {
     CHECK(submitted.code == 0);
     auto value = nlohmann::json::parse(submitted.output);
     const auto id = value["result"]["task_id"].get<uint64_t>();
+    auto listed = invoke({"tasks", "--target", "cli case", "--limit", "1"});
+    CHECK(listed.code == 0);
+    CHECK(nlohmann::json::parse(listed.output)["result"]["items"][0]["task_id"] == id);
     auto queried = invoke({"query", std::to_string(id)});
     CHECK(queried.code == 0);
     CHECK(nlohmann::json::parse(queried.output)["result"]["status"] == "QUEUED");
@@ -96,6 +106,12 @@ int main(int argc, char** argv) { return testMain([&] {
     auto regression_result = nlohmann::json::parse(regression.output)["result"];
     CHECK(regression_result["total"] == 1);
     CHECK(regression_result["items"][0]["outcome"] == "ACTIVE");
+    auto progress = invoke({"progress", "--target", "cli batch"});
+    CHECK(progress.code == 0);
+    CHECK(nlohmann::json::parse(progress.output)["result"]["revisions"][0]["revision"] == "18925");
+    auto rollback = invoke({"rollback", "--target", "cli batch", "--from", "18924", "--to", "18925"});
+    CHECK(rollback.code == 0);
+    CHECK(nlohmann::json::parse(rollback.output)["result"]["total"] == 0);
     CHECK(api.queryRegression({{"revision", "18925"}, {"limit", 0}}).data["code"] == 1);
     CHECK(nlohmann::json::parse(invoke({"query-batch", "cli-batch"}).output)["result"]["queued"] == 1);
     auto batch_cancelled = invoke({"cancel-batch", "cli-batch"});

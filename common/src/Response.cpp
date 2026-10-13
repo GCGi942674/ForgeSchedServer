@@ -25,6 +25,15 @@ nlohmann::json toJson(const Response& value) {
     j["code"] = value.code;
     j["message"] = value.message;
     j["result"] = value.data;
+    // Additive, stable categories: callers must not branch on human messages.
+    const char* reason = "INTERNAL_ERROR";
+    switch (value.code) {
+        case 0: reason = "OK"; break;
+        case 1: reason = "INVALID_REQUEST"; break;
+        case 2: reason = "NOT_FOUND"; break;
+        case 3: reason = "INVALID_STATE"; break;
+    }
+    j["error_reason"] = reason;
     return j;
 }
 

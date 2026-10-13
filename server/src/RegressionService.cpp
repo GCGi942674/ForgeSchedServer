@@ -150,6 +150,7 @@ nlohmann::json RegressionService::query(const RegressionQuery& filter) const {
         {"total", total}, {"counts", counts}, {"items", rows},
         {"has_more", has_more}, {"next_before_task_id", nullptr}};
     if (has_more) response["next_before_task_id"] = rows.back()["task_id"];
+    response["snapshot_generation"] = snapshot.first;
     if (cache_enabled_ && max_entries_ && ttl_seconds_ > 0 &&
         scheduler_.taskGeneration() == snapshot.first) {
         try {

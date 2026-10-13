@@ -1,5 +1,6 @@
 #include "TestSupport.h"
 #include "protocol/ProtocolCodec.h"
+#include "protocol/ConnectionRole.h"
 #include "protocol/ProtocolRouter.h"
 #include "protocol/dto/WorkerDTO.h"
 #include "config/Config.h"
@@ -44,6 +45,9 @@ int main() { return testMain([] {
     buffer.append(reinterpret_cast<char*>(&oversized), 4);
     CHECK(MessageCodec::Decoder::tryDecode(buffer, decoded) == MessageCodec::DecodeResult::Invalid);
     ProtocolMessage message; ProtocolError error;
+    CHECK(isAllowed(ConnectionRole::CLIENT, MessageType::QUERY_PROGRESS));
+    CHECK(isAllowed(ConnectionRole::CLIENT, MessageType::QUERY_ROLLBACK));
+    CHECK(!isAllowed(ConnectionRole::WORKER, MessageType::QUERY_PROGRESS));
     auto valid = envelope("worker_heartbeat", {{"worker_id", "w"}});
     CHECK(ProtocolCodec::decode(valid.dump(), message, error));
     for (const auto& key : {"version", "type", "request_id", "data"}) {
@@ -75,6 +79,11 @@ int main() { return testMain([] {
         auto bad = submit; bad["priority"] = priority; CHECK(route("submit_task", bad)["code"] != 0);
     }
     auto result = route("submit_task", submit); CHECK(result["code"] == 0);
+    CHECK(route("query_progress", {{"target", "x"}})["code"] == 0);
+    CHECK(route("query_rollback", {{"target", "x"},
+        {"from_revision", "1"}, {"to_revision", "2"}})["code"] == 0);
+    CHECK(route("query_progress", {{"target", "x"},
+        {"before_revision", "latest"}})["code"] != 0);
     auto id = result.at("result").at("task_id");
     CHECK(route("query_task", {{"task_id", id}})["result"]["status"] == "QUEUED");
     CHECK(route("query_task", {{"task_id", 999999u}})["code"] != 0);

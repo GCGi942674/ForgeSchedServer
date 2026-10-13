@@ -7,12 +7,26 @@
 #include "task/RegressionPayload.h"
 #include "scheduler/SchedulingDriver.h"
 #include "regression/RegressionService.h"
+#include "progress/ProgressService.h"
+#include "protocol/ApiQueries.h"
 #include "Logging.h"
 #include <chrono>
 #include "config/Config.h"
 #include <algorithm>
+#include <random>
+#include <sstream>
 
 namespace {
+const std::string& serverInstanceId() {
+    static const std::string id = [] {
+        std::random_device random;
+        std::ostringstream value;
+        value << std::hex;
+        for (int i = 0; i < 4; ++i) value << random() << '-';
+        return value.str();
+    }();
+    return id;
+}
 nlohmann::json batchResult(const std::string& id, const ForgeSched::BatchSnapshot& s) {
     return {{"batch_id", id}, {"stop_requested", s.stop_requested},
             {"cancelled_now", s.cancelled_now}, {"total", s.total},
@@ -106,6 +120,20 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
     ProtocolMessage response;
 
     switch (request.type) {
+        case MessageType::QUERY_TASKS:
+        case MessageType::QUERY_WORKERS:
+        case MessageType::QUERY_CAPABILITIES: {
+            try {
+                const auto data = request.type == MessageType::QUERY_TASKS
+                    ? Api::tasks(request.data, scheduler_)
+                    : request.type == MessageType::QUERY_WORKERS
+                    ? Api::workers(request.data, worker_manager_)
+                    : Api::capabilities(request.data);
+                return buildResponse(request, ResponseCode::OK, "ok", data);
+            } catch (const std::invalid_argument& e) {
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, e.what());
+            }
+        }
         case ForgeSched::Protocol::MessageType::SUBMIT_TASK: {
             ForgeSched::Protocol::DTO::SubmitTaskRequest submit_req;
             if (!ForgeSched::Protocol::DTO::fromJson(request.data, submit_req)) {
@@ -156,6 +184,24 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                                      "invalid regression query");
             return buildResponse(request, ResponseCode::OK, "ok",
                                  regression_service_.query(*filter));
+        }
+
+        case ForgeSched::Protocol::MessageType::QUERY_PROGRESS: {
+            const auto filter = ProgressQuery::parse(request.data);
+            if (!filter)
+                return buildResponse(request, ResponseCode::INVALID_REQUEST,
+                                     "invalid progress query");
+            return buildResponse(request, ResponseCode::OK, "ok",
+                                 ProgressService(scheduler_).queryProgress(*filter));
+        }
+
+        case ForgeSched::Protocol::MessageType::QUERY_ROLLBACK: {
+            const auto filter = RollbackQuery::parse(request.data);
+            if (!filter)
+                return buildResponse(request, ResponseCode::INVALID_REQUEST,
+                                     "invalid rollback query");
+            return buildResponse(request, ResponseCode::OK, "ok",
+                                 ProgressService(scheduler_).queryRollbacks(*filter));
         }
 
         case ForgeSched::Protocol::MessageType::QUERY_STATUS: {
@@ -405,6 +451,7 @@ ProtocolMessage ProtocolRouter::buildResponse(
     dto.data = data;
 
     response.data = ForgeSched::Protocol::DTO::toJson(dto);
+    response.data["server_instance_id"] = serverInstanceId();
     return response;
 }
 

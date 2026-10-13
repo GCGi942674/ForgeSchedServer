@@ -103,6 +103,11 @@ target_compile_options(test_regression_service PRIVATE -UNDEBUG)
 add_test(NAME test_regression_service COMMAND test_regression_service)
 set_tests_properties(test_regression_service PROPERTIES TIMEOUT 30)
 
+add_executable(test_progress_service test_progress_service.cpp)
+target_link_libraries(test_progress_service PRIVATE forgesched_server_core)
+add_test(NAME test_progress_service COMMAND test_progress_service)
+set_tests_properties(test_progress_service PROPERTIES TIMEOUT 30)
+
 add_test(NAME test_multislot_process COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_multislot_process.py
   $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR}/worker/slot_manager.py)
@@ -131,3 +136,7 @@ add_test(NAME test_intranet_p10_p14 COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_intranet_p10_p14.py
   $<TARGET_FILE:server> ${PROJECT_SOURCE_DIR})
 set_tests_properties(test_intranet_p10_p14 PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+add_executable(test_api_queries test_api_queries.cpp)
+target_link_libraries(test_api_queries PRIVATE forgesched_server_core)
+add_test(NAME test_api_queries COMMAND test_api_queries)
+set_tests_properties(test_api_queries PROPERTIES TIMEOUT 30)

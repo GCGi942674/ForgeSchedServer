@@ -116,4 +116,10 @@ Protocol::ProtocolMessage ForgeClient::cancelBatch(const std::string& id) {
 Protocol::ProtocolMessage ForgeClient::queryRegression(const nlohmann::json& filter) {
     return request(Protocol::MessageType::QUERY_REGRESSION, filter);
 }
+Protocol::ProtocolMessage ForgeClient::queryProgress(const nlohmann::json& filter) {
+    return request(Protocol::MessageType::QUERY_PROGRESS, filter);
+}
+Protocol::ProtocolMessage ForgeClient::queryRollback(const nlohmann::json& filter) {
+    return request(Protocol::MessageType::QUERY_ROLLBACK, filter);
+}
 } // namespace ForgeSched

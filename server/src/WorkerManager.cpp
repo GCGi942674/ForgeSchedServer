@@ -49,6 +49,7 @@ bool WorkerManager::registerWorker(
         it->second->setTotalSlots(slots);
         it->second->setOnline();
         it->second->updateHeartbeat();
+        ++generation_;
         LOG_INFO(LogModule::WORKER, "Worker re-registered: " + worker_id + " (hostname=" + hostname + ", slots=" + std::to_string(slots) + ")");
         return true;
     }
@@ -59,6 +60,7 @@ bool WorkerManager::registerWorker(
     worker->setOnline();
     worker->updateHeartbeat();
     workers_[worker_id] = std::move(worker);
+    ++generation_;
     LOG_INFO(LogModule::WORKER, "New worker registered: " + worker_id + " (hostname=" + hostname + ", slots=" + std::to_string(slots) + ")");
     return true;
 }
@@ -68,6 +70,7 @@ bool WorkerManager::markDraining(const WorkerId& worker_id) {
     auto it = workers_.find(worker_id);
     if (it == workers_.end()) return false;
     it->second->setDraining();
+    ++generation_;
     return true;
 }
 
@@ -76,6 +79,7 @@ bool WorkerManager::markOffline(const WorkerId& worker_id) {
     auto it = workers_.find(worker_id);
     if (it == workers_.end()) return false;
     it->second->setOffline();
+    ++generation_;
     return true;
 }
 
@@ -88,6 +92,7 @@ bool WorkerManager::heartbeat(const WorkerId& worker_id) {
     }
 
     it->second->updateHeartbeat();
+    ++generation_;
     // Heartbeats from a draining slot retain DRAINING until its connection closes.
     LOG_DEBUG(LogModule::WORKER, "Worker heartbeat: " + worker_id);
     return true;
@@ -105,7 +110,9 @@ bool WorkerManager::acquireSlot(const WorkerId& worker_id) {
         return false;
     }
 
-    return it->second->acquireSlot();
+    const bool changed = it->second->acquireSlot();
+    if (changed) ++generation_;
+    return changed;
 }
 
 bool WorkerManager::releaseSlot(const WorkerId& worker_id) {
@@ -116,7 +123,9 @@ bool WorkerManager::releaseSlot(const WorkerId& worker_id) {
         return false;
     }
 
-    return it->second->releaseSlot();
+    const bool changed = it->second->releaseSlot();
+    if (changed) ++generation_;
+    return changed;
 }
 
 std::optional<Worker> WorkerManager::getWorker(const WorkerId& id) const {
@@ -131,6 +140,10 @@ std::optional<Worker> WorkerManager::getWorker(const WorkerId& id) const {
 }
 
 std::vector<Worker> WorkerManager::getWorkers() const {
+    return snapshot().second;
+}
+
+std::pair<uint64_t, std::vector<Worker>> WorkerManager::snapshot() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     std::vector<Worker> result;
@@ -140,7 +153,7 @@ std::vector<Worker> WorkerManager::getWorkers() const {
         result.push_back(*worker_ptr);
     }
 
-    return result;
+    return {generation_, std::move(result)};
 }
 
 std::vector<Worker> WorkerManager::getOnlineWorkers() const {
@@ -188,6 +201,7 @@ void WorkerManager::checkTimeouts(std::chrono::seconds timeout) {
 
         if (elapsed > timeout) {
             worker_ptr->setOffline();
+            ++generation_;
             LOG_WARN(LogModule::WORKER, "Worker heartbeat timeout: " + id + " (" + std::to_string(elapsed.count()) + "s ago)");
             timed_out_count++;
         }

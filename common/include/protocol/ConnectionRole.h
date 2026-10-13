@@ -6,8 +6,11 @@ enum class ConnectionRole { UNKNOWN, CLIENT, WORKER };
 constexpr bool isClientRequest(MessageType type) {
     return type == MessageType::SUBMIT_TASK || type == MessageType::QUERY_TASK ||
            type == MessageType::QUERY_STATUS ||
+           type == MessageType::QUERY_TASKS || type == MessageType::QUERY_WORKERS ||
+           type == MessageType::QUERY_CAPABILITIES ||
            type == MessageType::CANCEL_TASK || type == MessageType::QUERY_BATCH ||
-           type == MessageType::CANCEL_BATCH || type == MessageType::QUERY_REGRESSION;
+           type == MessageType::CANCEL_BATCH || type == MessageType::QUERY_REGRESSION ||
+           type == MessageType::QUERY_PROGRESS || type == MessageType::QUERY_ROLLBACK;
 }
 constexpr bool isWorkerRequest(MessageType type) {
     return type == MessageType::WORKER_REGISTER || type == MessageType::WORKER_HEARTBEAT ||
