@@ -15,12 +15,15 @@ BLUE = "\033[94m"
 RESET = "\033[0m"
 
 
-def clean_log(path: str):
+def clean_log(path: str, report=False):
   cleaned = []
   with open(path, "r", encoding="utf-8", errors="ignore") as f:
     for line in f:
       line = line.rstrip("\n")
       if not line.strip():
+        continue
+      if report:
+        cleaned.append(line)
         continue
       if line.strip().startswith("general.maxThreads"):
         continue
@@ -43,19 +46,19 @@ def clean_log(path: str):
 
 
 def clean_report_section(path: str, title: str, end_marker: str):
-  lines = clean_log(path)
+  lines = clean_log(path, report=True)
   start = next((i for i, line in enumerate(lines) if title in line), None)
-  if start is not None:
-    lines = lines[start:]
+  if start is None:
+    raise ValueError(f"{title} not found in {path}")
 
   cleaned = []
-  for line in lines:
+  for line in lines[start:]:
     if line.strip() == "q" or end_marker in line:
       break
-    if re.match(r"^\s*\|?\s*(Tool Version|Date|Host)\s*:", line, re.I):
+    if re.match(r"^\s*\|?\s*(Tool Version|Date|Host|Command)\s*:", line, re.I):
       continue
     cleaned.append(line)
-  if not cleaned:
+  if len(cleaned) <= 1:
     raise ValueError(f"No comparable report content in {path}")
   return cleaned
 
@@ -66,6 +69,19 @@ def clean_report_timing_summary_only(path: str):
 
 def clean_report_power_only(path: str):
   return clean_report_section(path, "Power Report", "report_power: Time")
+
+
+def clean_report_place_status(path: str):
+  return clean_report_section(path, "Design Place Status", "report_place_status: Time")
+
+
+def clean_report_route_status(path: str):
+  return clean_report_section(path, "Design Route Status", "report_route_status: Time")
+
+
+def clean_utilization_from_place_only(path: str):
+  return clean_report_section(path, "Utilization Design Information", "report_utilization: Time")
+
 
 
 def clean_verilog(path: str):
@@ -150,6 +166,12 @@ def clean_file(path: str):
     return clean_report_timing_summary_only(path)
   elif "power_only" in name:
     return clean_report_power_only(path)
+  elif "place_status" in name:
+    return clean_report_place_status(path)
+  elif "route_status" in name:
+    return clean_report_route_status(path)
+  elif "utilization_from_place_only" in name:
+    return clean_utilization_from_place_only(path)
   else:
     return clean_log(path)
 
