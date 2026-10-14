@@ -13,6 +13,7 @@
 #include <QDateEdit>
 #include <QTimer>
 #include <QPushButton>
+#include <QElapsedTimer>
 #include <memory>
 
 struct GuiSettings {
@@ -33,6 +34,10 @@ private:
     QSet<QString> operations_;
     QStackedWidget* pages_{};
     QLabel* connection_{};
+    QLabel* freshness_{};
+    bool workersStale_{true}, tasksStale_{true};
+    QElapsedTimer workerUpdated_, taskUpdated_;
+    QTimer freshnessTimer_;
     QLabel* selection_{};
     QComboBox* machines_{};
     QTreeWidget* tasksTree_{};
@@ -67,4 +72,6 @@ private:
     void openLogs(const Json& task);
     void compareDemoDates();
     void note(const QString& text, bool error = false);
+    void updateFreshness();
+    void invalidateSnapshots(bool workers, bool tasks);
 };

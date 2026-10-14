@@ -118,12 +118,16 @@ MainWindow::MainWindow(GuiSettings settings, bool demo)
     auto refresh = new QPushButton(QStringLiteral("刷新")); bar->addWidget(refresh);
     connect(refresh,&QPushButton::clicked,this,[this]{this->refresh();});
     bodyLayout->addLayout(bar);
+    freshness_=new QLabel;freshness_->setWordWrap(true);
+    freshness_->setStyleSheet("color:#ad3442;padding:0px 22px 6px;");
+    bodyLayout->addWidget(freshness_);
     pages_->addWidget(workersPage()); pages_->addWidget(tasksPage());
     pages_->addWidget(addPage()); pages_->addWidget(regressionPage());
     bodyLayout->addWidget(pages_,1); shell->addWidget(body,1);
     setStyleSheet(ForgeUi::styleSheet());
     for(auto button:findChildren<QPushButton*>())button->setCursor(button->isEnabled()?Qt::PointingHandCursor:Qt::ArrowCursor);
     if (demo_) {
+        freshness_->hide();
         for (const auto& machine: {"novarch4","novarch3","tiger"})
             for (int i=1;i<=(std::string(machine)=="novarch4"?5:3);++i)
                 workers_.push_back({{"machine_id",machine},{"worker_id",std::string(machine)+"-slot"+std::to_string(i)},
@@ -144,6 +148,12 @@ MainWindow::MainWindow(GuiSettings settings, bool demo)
             submit_->setEnabled(!catalog_.is_null() && operations_.contains("submit_task"));
             this->refresh();
         });
+        connect(&freshnessTimer_,&QTimer::timeout,this,[this]{
+            const qint64 maxAge=qMax(settings_.refreshSeconds*3000,settings_.timeout*2);
+            if(workerUpdated_.isValid()&&workerUpdated_.elapsed()>maxAge)workersStale_=true;
+            if(taskUpdated_.isValid()&&taskUpdated_.elapsed()>maxAge)tasksStale_=true;
+            updateFreshness();showWorkers();
+        });freshnessTimer_.start(1000);updateFreshness();
         refreshTimer_.setInterval(settings_.refreshSeconds*1000);
         connect(&refreshTimer_,&QTimer::timeout,this,[this]{this->refresh();}); refreshTimer_.start();
         note(QStringLiteral("正在连接 Server…"));
@@ -239,15 +249,31 @@ void MainWindow::fetchList(const std::string& type,const Json& filter,const Json
         }catch(const std::exception& e){done(false,{},QString::fromUtf8(e.what()));}
     });
 }
+void MainWindow::invalidateSnapshots(bool workers,bool tasks) {
+    if(workers)workersStale_=true;if(tasks)tasksStale_=true;
+    updateFreshness();showWorkers();
+}
+void MainWindow::updateFreshness() {
+    if(demo_){freshness_->hide();return;}
+    QStringList missing;
+    if(workersStale_)missing<<QStringLiteral("工作机状态");
+    if(tasksStale_)missing<<QStringLiteral("任务状态");
+    freshness_->setVisible(!missing.isEmpty());
+    freshness_->setText(QStringLiteral("数据未确认 / 已过期：")+missing.join(QStringLiteral("、"))+
+        QStringLiteral("。保留上次快照；不代表当前在线状态。请检查连接或刷新。"));
+    if(workerUpdated_.isValid())freshness_->setText(freshness_->text()+
+        QStringLiteral(" 工作机快照距今 %1 秒。").arg(workerUpdated_.elapsed()/1000));
+}
+
 void MainWindow::refresh() {
     if(demo_){showWorkers();showTasks();return;}if(loading_||submitting_)return;
     loading_=true;
     fetchList("query_workers",Json::object(),nullptr,std::make_shared<Json>(Json::array()),{},
       [this](bool ok,Json rows,QString warning){
-        if(!ok){loading_=false;note(QStringLiteral("数据未更新：")+warning,true);return;}
-        workers_=std::move(rows);showWorkers();
+        if(!ok){loading_=false;invalidateSnapshots(true,true);note(QStringLiteral("连接中断或查询失败：")+warning,true);return;}
+        workers_=std::move(rows);workersStale_=false;workerUpdated_.restart();updateFreshness();showWorkers();
         fetchList("query_tasks",Json::object(),nullptr,std::make_shared<Json>(Json::array()),{},
-          [this,warning](bool success,Json rows,QString taskWarning){loading_=false;if(!success){note(QStringLiteral("任务数据未更新：")+taskWarning,true);return;}tasks_=std::move(rows);showTasks();note(QStringLiteral("已连接 · 更新于 ")+QDateTime::currentDateTime().toString("HH:mm:ss")+" "+warning+taskWarning);});
+          [this,warning](bool success,Json rows,QString taskWarning){loading_=false;if(!success){invalidateSnapshots(false,true);note(QStringLiteral("任务查询失败：")+taskWarning,true);return;}tasks_=std::move(rows);tasksStale_=false;taskUpdated_.restart();updateFreshness();showTasks();note(QStringLiteral("已连接 · 更新于 ")+QDateTime::currentDateTime().toString("HH:mm:ss")+" "+warning+taskWarning);});
     });
 }
 void MainWindow::showWorkers() {
@@ -258,6 +284,7 @@ void MainWindow::showWorkers() {
     for(const auto& w:workers_)if(text(w,"machine_id")==machines_->currentText()){
         int row=slotsTable_->rowCount();slotsTable_->insertRow(row);cell(slotsTable_,row,0,text(w,"slot_id"));cell(slotsTable_,row,1,text(w,"worker_id"));
         auto status=text(w,"status");if(status=="ONLINE")status+=w.value("used",0)>0?QStringLiteral(" · 忙碌"):QStringLiteral(" · 空闲");
+        if(!demo_&&workersStale_)status=QStringLiteral("未知 · 数据过期（上次：")+status+QStringLiteral("）");
         cell(slotsTable_,row,2,status);cell(slotsTable_,row,3,text(w,"used")+" / "+text(w,"capacity"));
         cell(slotsTable_,row,4,"—");for(const auto& t:tasks_)if(text(t,"worker_id")==text(w,"worker_id")&&(text(t,"status")=="RUNNING"||text(t,"status")=="ASSIGNED")){
             cell(slotsTable_,row,4,"Task #"+text(t,"task_id"));slotsTable_->item(row,4)->setData(Qt::UserRole,text(t,"task_id"));break;
@@ -370,5 +397,12 @@ bool MainWindow::selfTest() {
     if(navigation.size()!=4)return false;
     navigation[2]->click();if(pages_->currentIndex()!=2)return false;
     navigation[0]->click();if(pages_->currentIndex()!=0)return false;
+    demo_=false;workersStale_=false;tasksStale_=false;workerUpdated_.start();taskUpdated_.start();
+    invalidateSnapshots(true,true);
+    if(!workersStale_||!tasksStale_||!freshness_->isVisible()||slotsTable_->rowCount()==0)return false;
+    if(!slotsTable_->item(0,2)->text().contains(QStringLiteral("数据过期")))return false;
+    workersStale_=false;tasksStale_=false;updateFreshness();showWorkers();
+    if(freshness_->isVisible()||slotsTable_->item(0,2)->text().contains(QStringLiteral("数据过期")))return false;
+    demo_=true;
     return regressionTable_->rowCount()==5;
 }
