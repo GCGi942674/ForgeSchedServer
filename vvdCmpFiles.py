@@ -7,6 +7,7 @@ import zipfile
 from contextlib import contextmanager
 
 SDF_SORT_SCRIPT = "/home/zhenlei/projects/ForgeSched/sort_sdf.py"
+BIT_SYNC_WORD = b"\xAA\x99\x55\x66"
 
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -105,6 +106,37 @@ def clean_sdf(path: str):
   return cleaned if found_delayfile else original
 
 
+def clean_bit(path: str):
+  with open(path, "rb") as f:
+    data = f.read()
+
+  magic = bytes.fromhex("00090ff00ff00ff00ff0000001")
+  if not data.startswith(magic):
+    raise ValueError(f"{path}: invalid .bit header")
+
+  cursor = len(magic)
+  for tag in b"abcd":
+    if cursor + 3 > len(data) or data[cursor] != tag:
+      raise ValueError(f"{path}: missing metadata field {chr(tag)}")
+    size = int.from_bytes(data[cursor + 1:cursor + 3], "big")
+    cursor += 3
+    if not size or cursor + size > len(data):
+      raise ValueError(f"{path}: invalid metadata length")
+    cursor += size
+
+  if cursor + 5 > len(data) or data[cursor] != ord("e"):
+    raise ValueError(f"{path}: missing .bit payload length")
+  size = int.from_bytes(data[cursor + 1:cursor + 5], "big")
+  cursor += 5
+  if size != len(data) - cursor:
+    raise ValueError(f"{path}: declared payload length does not match file")
+
+  sync_offset = data.find(BIT_SYNC_WORD, cursor)
+  if sync_offset < 0 or sync_offset + len(BIT_SYNC_WORD) >= len(data):
+    raise ValueError(f"{path}: missing sync word or empty post-sync payload")
+  return memoryview(data)[sync_offset + len(BIT_SYNC_WORD):]
+
+
 def clean_file(path: str):
   ext = os.path.splitext(path)[1].lower()
   name = os.path.basename(path).lower()
@@ -112,6 +144,8 @@ def clean_file(path: str):
     return clean_verilog(path)
   elif ext == ".sdf":
     return clean_sdf(path)
+  elif ext == ".bit":
+    return clean_bit(path)
   elif "timing_summary_only" in name:
     return clean_report_timing_summary_only(path)
   elif "power_only" in name:
@@ -181,8 +215,35 @@ def print_differences(log1, log2, f1, f2, to_diff):
       print()
       cnt += 1
 
+
+def print_bit_differences(payload1, payload2, f1, f2):
+  count = 0
+  shown = []
+  for offset in range(max(len(payload1), len(payload2))):
+    byte1 = payload1[offset] if offset < len(payload1) else None
+    byte2 = payload2[offset] if offset < len(payload2) else None
+    if byte1 != byte2:
+      count += 1
+      if len(shown) < 16:
+        shown.append((offset, byte1, byte2))
+
+  print("\n" + BLUE + "Differences:" + RESET)
+  print(f"Different payload bytes: {count}")
+  for offset, byte1, byte2 in shown:
+    value1 = f"0x{byte1:02X}" if byte1 is not None else "<EOF>"
+    value2 = f"0x{byte2:02X}" if byte2 is not None else "<EOF>"
+    print(f"post-sync byte 0x{offset:X} (word {offset // 4}): "
+          f"[{f1}] {value1}, [{f2}] {value2}")
+  if count > len(shown):
+    print(f"Showing first {len(shown)} differences")
+
+
 def VvdCmpFiles(f1, f2, to_diff=""):
   with prepare_file(f1) as prepared1, prepare_file(f2) as prepared2:
+    bit1 = os.path.splitext(prepared1)[1].lower() == ".bit"
+    bit2 = os.path.splitext(prepared2)[1].lower() == ".bit"
+    if bit1 != bit2:
+      raise ValueError("Cannot compare a .bit file with a different file type")
     with tempfile.TemporaryDirectory() as sort_dir:
       if os.path.splitext(prepared1)[1].lower() == ".sdf":
         prepared1 = sort_sdf_file(
@@ -200,7 +261,10 @@ def VvdCmpFiles(f1, f2, to_diff=""):
     return 1
   else:
     print(RED + "Files are different" + RESET)
-    print_differences(log1, log2, f1, f2, to_diff)
+    if bit1:
+      print_bit_differences(log1, log2, f1, f2)
+    else:
+      print_differences(log1, log2, f1, f2, to_diff)
     return 0
 
 
