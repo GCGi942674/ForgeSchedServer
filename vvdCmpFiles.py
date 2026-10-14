@@ -41,6 +41,32 @@ def clean_log(path: str):
   return cleaned
 
 
+def clean_report_section(path: str, title: str, end_marker: str):
+  lines = clean_log(path)
+  start = next((i for i, line in enumerate(lines) if title in line), None)
+  if start is not None:
+    lines = lines[start:]
+
+  cleaned = []
+  for line in lines:
+    if line.strip() == "q" or end_marker in line:
+      break
+    if re.match(r"^\s*\|?\s*(Tool Version|Date|Host)\s*:", line, re.I):
+      continue
+    cleaned.append(line)
+  if not cleaned:
+    raise ValueError(f"No comparable report content in {path}")
+  return cleaned
+
+
+def clean_report_timing_summary_only(path: str):
+  return clean_report_section(path, "Timing Summary Report", "report_timing_summary: Time")
+
+
+def clean_report_power_only(path: str):
+  return clean_report_section(path, "Power Report", "report_power: Time")
+
+
 def clean_verilog(path: str):
   cleaned = []
   original = []
@@ -81,10 +107,15 @@ def clean_sdf(path: str):
 
 def clean_file(path: str):
   ext = os.path.splitext(path)[1].lower()
+  name = os.path.basename(path).lower()
   if ext == ".v":
     return clean_verilog(path)
   elif ext == ".sdf":
     return clean_sdf(path)
+  elif "timing_summary_only" in name:
+    return clean_report_timing_summary_only(path)
+  elif "power_only" in name:
+    return clean_report_power_only(path)
   else:
     return clean_log(path)
 
