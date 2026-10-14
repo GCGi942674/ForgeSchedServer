@@ -56,10 +56,15 @@ def compact_smoke(config, filename):
 
 
 def run_offline(config, report):
-    ctest = shutil.which('ctest')
+    intranet_ctest = Path('/home/xshare/scripts/bin/cmake-3.15.2/bin/ctest')
+    ctest = str(intranet_ctest) if intranet_ctest.is_file() else shutil.which('ctest')
+    report['offline_ctest'] = ctest
     build = ROOT / 'build'
-    if not ctest or not (build / 'CTestTestfile.cmake').is_file():
-        report['offline_error'] = 'build the complete test suite and install ctest first'
+    if not ctest:
+        report['offline_error'] = 'ctest not found in PATH or the intranet CMake directory'
+        return
+    if not (build / 'CTestTestfile.cmake').is_file():
+        report['offline_error'] = 'build/CTestTestfile.cmake missing; configure BUILD_TESTING=ON first'
         return
     logs = report_path(config, 'stage-test-logs')
     logs.mkdir(parents=True, exist_ok=True)

@@ -46,6 +46,13 @@ int main(int argc, char** argv) { return testMain([&] {
     CHECK(ForgeSched::Config::instance().load(std::string(path) + "/server.conf"));
     ControlTestServer host;
     auto client = connectTo(host.port);
+    // Child CLI/Worker processes must use the fixture, not the deployment config.
+    const auto runtime_config = std::filesystem::path(path) / "runtime.conf";
+    { std::ofstream file(runtime_config);
+      file << "network.server_ip=127.0.0.1\nserver.port=" << host.port << "\n";
+      file << "network.timeout_ms=5000\n";
+    }
+    CHECK(::setenv("FORGESCHED_CONFIG", runtime_config.c_str(), 1) == 0);
     const auto tasks_before = host.worker.getScheduler().getTasks().size();
     for (const auto& payload : {
             nlohmann::json{{"spec_version", 1}, {"case", "../escape/run.tcl"}, {"flow", "route"}, {"timeout_seconds", 1}},
