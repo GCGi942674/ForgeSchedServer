@@ -5,7 +5,7 @@
 #include <string>
 #include "nlohmann/json.hpp"
 
-namespace ForgeSched {
+namespace GCRP {
 // A bounded, per-run archive. All path components except the configured root
 // are validated identities or names from a fixed allowlist.
 class RunLogArchive {
@@ -26,4 +26,4 @@ private:
     std::filesystem::path root_;
     std::mutex mutex_;
 };
-} // namespace ForgeSched
+} // namespace GCRP

@@ -1,9 +1,9 @@
 #include "TestSupport.h"
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include <functional>
 #include <poll.h>
-using namespace ForgeSched;
-using namespace ForgeSched::Protocol;
+using namespace GCRP;
+using namespace GCRP::Protocol;
 struct FakeServer {
     Fd listener{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
     int port{0}; std::thread thread; std::exception_ptr error;
@@ -66,7 +66,7 @@ int main() { return testMain([] {
             auto packet = MessageCodec::encode(message.dump());
             sendBytes(fd, packet.data(), 2); sendBytes(fd, packet.data()+2, packet.size()-2);
         });
-        ForgeClient client("127.0.0.1", server.port, mode == 7 || mode == 8 ? 80 : 2000);
+        GcrpClient client("127.0.0.1", server.port, mode == 7 || mode == 8 ? 80 : 2000);
         bool rejected = false;
         std::string failure;
         const auto start = std::chrono::steady_clock::now();
@@ -79,7 +79,7 @@ int main() { return testMain([] {
         CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(3));
         server.finish();
     }
-    ForgeClient client("127.0.0.1", 1);
+    GcrpClient client("127.0.0.1", 1);
     bool rejected = false;
     try { client.request(MessageType::WORKER_REGISTER, nlohmann::json::object()); }
     catch (const std::invalid_argument&) { rejected = true; }

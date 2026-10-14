@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_TASK_H
-#define FORGESCHED_TASK_H
+#ifndef GCRP_TASK_H
+#define GCRP_TASK_H
 
 #include "TaskStatus.h"
 #include "TaskType.h"
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include "nlohmann/json.hpp"
 
-namespace ForgeSched {
+namespace GCRP {
 
 using TaskId = uint64_t;
 
@@ -82,6 +82,6 @@ private:
         std::chrono::system_clock::time_point finished_at_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_TASK_H
+#endif // GCRP_TASK_H

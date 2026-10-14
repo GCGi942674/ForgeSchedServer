@@ -2,7 +2,7 @@
 
 The optional cache stores complete `QUERY_REGRESSION` responses by filter and
 pagination cursor. A repeated query can return without copying and sorting all
-Scheduler tasks. It is disabled by default. Enable it in `config/forgesched.conf`:
+Scheduler tasks. It is disabled by default. Enable it in `config/gcrp.conf`:
 
 ```ini
 cache.regression.enabled=true

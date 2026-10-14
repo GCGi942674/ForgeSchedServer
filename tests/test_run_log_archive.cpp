@@ -6,11 +6,11 @@
 #include <chrono>
 #include <fstream>
 #include <stdexcept>
-using namespace ForgeSched;
-using namespace ForgeSched::Protocol;
+using namespace GCRP;
+using namespace GCRP::Protocol;
 
 int main() { return testMain([] {
-    char name[] = "/tmp/forge-logs-XXXXXX";
+    char name[] = "/tmp/gcrp-logs-XXXXXX";
     CHECK(::mkdtemp(name) != nullptr);
     struct Cleanup { std::string path; ~Cleanup() { std::filesystem::remove_all(path); } } cleanup{name};
     CHECK(isAllowed(ConnectionRole::WORKER, MessageType::LOG_APPEND));

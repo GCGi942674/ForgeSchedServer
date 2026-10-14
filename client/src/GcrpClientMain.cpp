@@ -1,4 +1,4 @@
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include "config/Config.h"
 #include <arpa/inet.h>
 #include <charconv>
@@ -6,7 +6,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
-using namespace ForgeSched;
+using namespace GCRP;
 namespace {
 struct UsageError : std::runtime_error { using std::runtime_error::runtime_error; };
 template<class T> T number(const std::string& text) {
@@ -17,8 +17,8 @@ template<class T> T number(const std::string& text) {
     return result;
 }
 void usage() {
-    std::cout << "Usage: forgesched_client [--host IPv4] [--port PORT] [--timeout-ms MS]\n"
-              << "Defaults come from FORGESCHED_CONFIG or config/forgesched.conf.\n"
+    std::cout << "Usage: gcrp_client [--host IPv4] [--port PORT] [--timeout-ms MS]\n"
+              << "Defaults come from GCRP_CONFIG or config/gcrp.conf.\n"
               << "  submit --target TARGET --revision REV [--priority -100..100]\n"
               << "         [--case PATH/run.tcl --flow PROFILE --case-timeout SEC]\n"
               << "  query TASK_ID\n  cancel TASK_ID\n"
@@ -40,7 +40,7 @@ void usage() {
 int main(int argc, char** argv) {
     try {
         if (!Config::instance().loadDefault())
-            throw UsageError("missing config; set FORGESCHED_CONFIG");
+            throw UsageError("missing config; set GCRP_CONFIG");
         std::string host = Config::instance().getString("network.server_ip", "");
         std::string command, target, revision, id, case_path, flow, batch_id;
         std::string from_revision, to_revision, before_revision;
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
         if (port < 1 || port > 65535 || timeout < 1 || timeout > 60000)
             throw UsageError("port or timeout out of range");
         if (priority < -100 || priority > 100) throw UsageError("priority out of range");
-        ForgeClient client(host, static_cast<uint16_t>(port), timeout);
+        GcrpClient client(host, static_cast<uint16_t>(port), timeout);
         Protocol::ProtocolMessage response;
         if (command != "tasks" && command != "workers" &&
             (seen.count("--status") || seen.count("--machine-id") || seen.count("--after")))

@@ -1,12 +1,12 @@
-#ifndef FORGESCHED_WORKER_H
-#define FORGESCHED_WORKER_H
+#ifndef GCRP_WORKER_H
+#define GCRP_WORKER_H
 
 #include "WorkerStatus.h"
 #include <string>
 #include <cstdint>
 #include <chrono>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class WorkerManager;
 
@@ -67,6 +67,6 @@ private:
     std::chrono::system_clock::time_point last_heartbeat_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_H
+#endif // GCRP_WORKER_H

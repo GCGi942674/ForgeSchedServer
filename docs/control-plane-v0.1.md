@@ -1,4 +1,4 @@
-# ForgeSched v0.1 控制面
+# GCRP v0.1 控制面
 
 本阶段把 Client 和 Worker 接到同一个 TCP 服务端口，并复用现有 ProtocolRouter、
 TaskService 和 Scheduler。未实现 SQLite、缓存、重启恢复、真实进程执行或 GUI。
@@ -9,20 +9,20 @@ TaskService 和 Scheduler。未实现 SQLite、缓存、重启恢复、真实进
 
 ```sh
 make
-./build/bin/server
+./build/bin/gcrp_server
 ```
 
-服务、CLI 和 Worker 读取同一格式的 `config/forgesched.conf`；
-可用 `FORGESCHED_CONFIG=/absolute/path/forgesched.conf` 显式指定。
+服务、CLI 和 Worker 读取同一格式的 `config/gcrp.conf`；
+可用 `GCRP_CONFIG=/absolute/path/gcrp.conf` 显式指定。
 连接地址由 `network.server_ip` 指定，监听地址由 `server.bind_ip` 指定，
 端口统一使用 `server.port`。缺少配置时启动失败；多机部署需在各机器上
 配置可达的服务地址。
 在另一终端运行：
 
 ```sh
-./build/bin/forgesched_client submit --target demo --revision r1 --priority 0
-./build/bin/forgesched_client query 1
-./build/bin/forgesched_client cancel 1
+./build/bin/gcrp_client submit --target demo --revision r1 --priority 0
+./build/bin/gcrp_client query 1
+./build/bin/gcrp_client cancel 1
 ```
 
 上面的 1 必须替换为 submit 返回的 `result.task_id`。没有 Worker 在线时任务保持
@@ -45,8 +45,8 @@ stdout 输出一行 JSON 响应体（code/message/result），错误诊断写 st
 客户端不自动重试。提交或取消超时不代表服务端没有执行，盲目重试提交可能重复建任务。
 目前没有请求幂等去重机制。
 
-可复用的 C++ API 位于 `client/include/ForgeClient.h`，链接
-`forgesched_client_api`。每次请求新建一个连接；同一个实例不支持并发调用，
+可复用的 C++ API 位于 `client/include/GcrpClient.h`，链接
+`gcrp_client_api`。每次请求新建一个连接；同一个实例不支持并发调用，
 并发线程应分别创建实例。以后 GUI 可复用这层 API。
 
 ## 连接角色与权限

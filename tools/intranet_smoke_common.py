@@ -22,11 +22,11 @@ def utc_now():
 
 
 def config_and_root():
-    configured = os.environ.get('FORGESCHED_CONFIG')
+    configured = os.environ.get('GCRP_CONFIG')
     if configured is not None:
         if not configured:
-            raise ValueError('FORGESCHED_CONFIG is empty')
-        os.environ['FORGESCHED_CONFIG'] = str(Path(configured).expanduser().resolve())
+            raise ValueError('GCRP_CONFIG is empty')
+        os.environ['GCRP_CONFIG'] = str(Path(configured).expanduser().resolve())
     os.chdir(str(ROOT))
     return load_config()
 
@@ -105,7 +105,7 @@ def request(config, kind, data):
         message = json.loads(recv_exact(sock, size).decode('utf-8'))
     if (not isinstance(message, dict) or message.get('type') != 'response' or
             message.get('request_id') != 1 or not isinstance(message.get('data'), dict)):
-        raise ValueError('invalid ForgeSched response')
+        raise ValueError('invalid GCRP response')
     result = message['data']
     if result.get('code') != 0:
         raise RuntimeError('{}: {}'.format(kind, result.get('message')))

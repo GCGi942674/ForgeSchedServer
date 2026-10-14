@@ -1,10 +1,10 @@
-#ifndef FORGESCHED_TASK_ID_GENERATOR_H
-#define FORGESCHED_TASK_ID_GENERATOR_H
+#ifndef GCRP_TASK_ID_GENERATOR_H
+#define GCRP_TASK_ID_GENERATOR_H
 
 #include <cstdint>
 #include <atomic>
 
-namespace ForgeSched {
+namespace GCRP {
 
 using TaskId = uint64_t;
 
@@ -26,6 +26,6 @@ private:
     std::atomic<TaskId> next_id_{1};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_TASK_ID_GENERATOR_H
+#endif // GCRP_TASK_ID_GENERATOR_H

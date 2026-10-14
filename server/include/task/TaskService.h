@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_TASK_SERVICE_H
-#define FORGESCHED_TASK_SERVICE_H
+#ifndef GCRP_TASK_SERVICE_H
+#define GCRP_TASK_SERVICE_H
 
 #include "task/Task.h"
 #include "task/TaskType.h"
@@ -10,7 +10,7 @@
 #include <string>
 #include "nlohmann/json.hpp"
 
-namespace ForgeSched {
+namespace GCRP {
 
 struct CreateTaskRequest {
     TaskType type;
@@ -43,6 +43,6 @@ private:
     TaskIdGenerator id_generator_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_TASK_SERVICE_H
+#endif // GCRP_TASK_SERVICE_H

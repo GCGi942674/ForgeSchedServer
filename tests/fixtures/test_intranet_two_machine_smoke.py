@@ -32,7 +32,7 @@ def write_config(path, settings):
 def main():
     binary = Path(sys.argv[1]).resolve()
     root = Path(sys.argv[2]).resolve()
-    with tempfile.TemporaryDirectory(prefix='forgesched-two-machines-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='gcrp-two-machines-') as temporary:
         base = Path(temporary)
         subprocess.run([sys.executable, '-B', str(root / 'tests/fixtures/pjtest/setup.py'),
                         str(base)], check=True, stdout=subprocess.DEVNULL)
@@ -98,9 +98,9 @@ def main():
         try:
             def start(script, config, log):
                 env = os.environ.copy()
-                env['FORGESCHED_CONFIG'] = str(config)
+                env['GCRP_CONFIG'] = str(config)
                 if config in worker_configs:
-                    env['FORGESCHED_MACHINE_NAME'] = config.stem
+                    env['GCRP_MACHINE_NAME'] = config.stem
                 stream = log.open('w')
                 try:
                     process = subprocess.Popen([sys.executable, '-B', '-u', str(script)],

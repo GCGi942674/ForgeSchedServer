@@ -31,7 +31,7 @@ def stop_group(process):
 def main():
     server_binary = Path(sys.argv[1]).resolve()
     root = Path(sys.argv[2]).resolve()
-    with tempfile.TemporaryDirectory(prefix='forgesched-intranet-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='gcrp-intranet-') as temporary:
         base = Path(temporary)
         subprocess.run([sys.executable, '-B', str(root / 'tests/fixtures/pjtest/setup.py'),
                         str(base)], check=True, stdout=subprocess.DEVNULL)
@@ -81,8 +81,8 @@ def main():
         config.write_text(''.join('{}={}\n'.format(key, value)
                                   for key, value in settings.items()), encoding='utf-8')
         env = os.environ.copy()
-        env['FORGESCHED_CONFIG'] = str(config)
-        env['FORGESCHED_MACHINE_NAME'] = 'fixture'
+        env['GCRP_CONFIG'] = str(config)
+        env['GCRP_MACHINE_NAME'] = 'fixture'
         server = worker = None
         try:
             with (base / 'server-script.log').open('w+') as server_output, \

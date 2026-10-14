@@ -8,7 +8,7 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 EventLoop::EventLoop() : epfd_(-1), wakeup_fd_(-1), quit_(false) {
   this->epfd_ = epoll_create1(0);

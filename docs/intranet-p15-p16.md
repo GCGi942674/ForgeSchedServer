@@ -2,7 +2,7 @@
 
 P15 验证回归查询缓存的命中与失效，以及持久化路径没有回归。P16 验证按 `target + case + flow` 汇总数字 revision，并检测明确的 PASS→FAIL / FAIL→PASS。先在 Server 机器验收即可。
 
-将完整 ForgeSched 项目同步到内网 Server 后，在项目根目录只运行：
+将完整 GCRP 项目同步到内网 Server 后，在项目根目录只运行：
 
 ```bash
 python3 -B -u tools/intranet_p15_p16.py

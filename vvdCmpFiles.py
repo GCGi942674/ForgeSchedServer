@@ -6,7 +6,7 @@ import tempfile
 import zipfile
 from contextlib import contextmanager
 
-SDF_SORT_SCRIPT = "/home/zhenlei/projects/ForgeSched/sort_sdf.py"
+SDF_SORT_SCRIPT = "/home/zhenlei/projects/GalaxCoreRegressionPlatform/sort_sdf.py"
 BIT_SYNC_WORD = b"\xAA\x99\x55\x66"
 
 GREEN = "\033[92m"

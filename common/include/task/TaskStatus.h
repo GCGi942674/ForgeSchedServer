@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_TASK_STATUS_H
-#define FORGESCHED_TASK_STATUS_H
+#ifndef GCRP_TASK_STATUS_H
+#define GCRP_TASK_STATUS_H
 
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 enum class TaskStatus {
     PENDING,
@@ -18,6 +18,6 @@ enum class TaskStatus {
 
 std::string toString(TaskStatus status);
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_TASK_STATUS_H
+#endif // GCRP_TASK_STATUS_H

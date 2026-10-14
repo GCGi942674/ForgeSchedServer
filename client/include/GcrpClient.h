@@ -3,12 +3,12 @@
 #include <string>
 #include <cstdint>
 
-namespace ForgeSched {
+namespace GCRP {
 // Synchronous one-request-per-connection API. No automatic retries for mutations.
 // Numeric IPv4 only; timeout covers connect, complete send and complete response.
-class ForgeClient {
+class GcrpClient {
 public:
-    ForgeClient(std::string host, uint16_t port, int timeout_ms = 5000);
+    GcrpClient(std::string host, uint16_t port, int timeout_ms = 5000);
     Protocol::ProtocolMessage request(Protocol::MessageType, const nlohmann::json&);
     Protocol::ProtocolMessage submit(const std::string& target, const std::string& revision, int priority = 0);
     Protocol::ProtocolMessage query(uint64_t task_id);
@@ -24,4 +24,4 @@ private:
     int timeout_ms_;
     uint64_t next_request_id_{1};
 };
-} // namespace ForgeSched
+} // namespace GCRP

@@ -4,7 +4,7 @@
 #include "logger/LogModule.h"
 #include "Logging.h"
 
-namespace ForgeSched {
+namespace GCRP {
 
 bool WorkerManager::registerWorker(
     const WorkerId& worker_id,
@@ -212,4 +212,4 @@ void WorkerManager::checkTimeouts(std::chrono::seconds timeout) {
     }
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

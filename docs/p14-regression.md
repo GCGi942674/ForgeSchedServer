@@ -1,8 +1,8 @@
 # P14 Regression query v1
 
-ForgeSched stores one `run.tcl` as one Task; PJTest stores a parent task,
+GCRP stores one `run.tcl` as one Task; PJTest stores a parent task,
 examples, and attempts separately. This read-only view is deliberately based on
-ForgeSched Tasks. It does not claim to reproduce PJTest's parent-task IDs,
+GCRP Tasks. It does not claim to reproduce PJTest's parent-task IDs,
 example IDs, historical files or GUI cache.
 
 `QUERY_REGRESSION` accepts JSON with at least one of `revision`, `case`, or
@@ -16,9 +16,9 @@ returns an empty result, not a missing-task error.
 The CLI exposes the same query:
 
 ```bash
-./build/bin/forgesched_client regression --revision 18925 --limit 20
-./build/bin/forgesched_client regression --case kintexuplus/xcku3p-ffvd900-1-i/convergentRoundingEven/run.tcl --flow route
-./build/bin/forgesched_client regression --batch-id 2026-10-10-18925 --before 10001
+./build/bin/gcrp_client regression --revision 18925 --limit 20
+./build/bin/gcrp_client regression --case kintexuplus/xcku3p-ffvd900-1-i/convergentRoundingEven/run.tcl --flow route
+./build/bin/gcrp_client regression --batch-id 2026-10-10-18925 --before 10001
 ```
 
 Only Tasks containing a real `payload.case` participate; legacy demo Tasks
@@ -36,4 +36,4 @@ reads after real query-volume measurements. In particular, this is not yet a
 replacement for PJTest's log download, detailed attempt history, or matrix
 reports. Those require explicit data contracts and should not be inferred from
 one Task's latest execution summary. Neither `result.env` files nor entire
-worker logs are stored in the ForgeSched database.
+worker logs are stored in the GCRP database.

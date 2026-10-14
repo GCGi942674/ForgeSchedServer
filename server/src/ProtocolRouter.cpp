@@ -28,7 +28,7 @@ const std::string& serverInstanceId() {
     }();
     return id;
 }
-nlohmann::json batchResult(const std::string& id, const ForgeSched::BatchSnapshot& s) {
+nlohmann::json batchResult(const std::string& id, const GCRP::BatchSnapshot& s) {
     return {{"batch_id", id}, {"stop_requested", s.stop_requested},
             {"cancelled_now", s.cancelled_now}, {"total", s.total},
             {"pending", s.pending}, {"queued", s.queued},
@@ -45,14 +45,14 @@ bool batchRequest(const nlohmann::json& data) {
            !data["batch_id"].get<std::string>().empty() &&
            data["batch_id"].get<std::string>().size() <= 128;
 }
-nlohmann::json executionSummary(const std::string& message, ForgeSched::TaskStatus status) noexcept {
+nlohmann::json executionSummary(const std::string& message, GCRP::TaskStatus status) noexcept {
     if (message.empty() || message.size() > 8192) return nullptr;
     try {
         const auto source = nlohmann::json::parse(message, nullptr, false);
         if (!source.is_object()) return nullptr;
         const auto status_it = source.find("status");
         if (status_it != source.end() &&
-            (!status_it->is_string() || status_it->get<std::string>() != ForgeSched::toString(status)))
+            (!status_it->is_string() || status_it->get<std::string>() != GCRP::toString(status)))
             return nullptr;
         nlohmann::json summary = nlohmann::json::object();
         for (const char* key : {"reason", "case_status", "case_reason"}) {
@@ -80,7 +80,7 @@ nlohmann::json executionSummary(const std::string& message, ForgeSched::TaskStat
 }
 }
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 ProtocolRouter::ProtocolRouter(
     TaskService& task_service,
@@ -113,12 +113,12 @@ ResponseCode ProtocolRouter::toErrorCode(TaskStatus status) const {
 
 ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
     try {
-    if (request.type == ForgeSched::Protocol::MessageType::RESPONSE) {
+    if (request.type == GCRP::Protocol::MessageType::RESPONSE) {
         LOG_WARN(LogModule::NETWORK, "Received RESPONSE as incoming request");
         return buildResponse(request, ResponseCode::INVALID_REQUEST, "unexpected response message");
     }
 
-    ForgeSched::Protocol::ProtocolError error;
+    GCRP::Protocol::ProtocolError error;
     ProtocolMessage response;
 
     switch (request.type) {
@@ -184,13 +184,13 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, e.what());
             }
         }
-        case ForgeSched::Protocol::MessageType::SUBMIT_TASK: {
-            ForgeSched::Protocol::DTO::SubmitTaskRequest submit_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, submit_req)) {
+        case GCRP::Protocol::MessageType::SUBMIT_TASK: {
+            GCRP::Protocol::DTO::SubmitTaskRequest submit_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, submit_req)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid submit task request");
             }
 
-            ForgeSched::CreateTaskRequest create_req;
+            GCRP::CreateTaskRequest create_req;
             create_req.type = submit_req.task_type;
             create_req.target = submit_req.target;
             create_req.revision = submit_req.revision;
@@ -213,9 +213,9 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok", data);
         }
 
-        case ForgeSched::Protocol::MessageType::QUERY_TASK: {
-            ForgeSched::Protocol::DTO::QueryTaskRequest query_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, query_req)) {
+        case GCRP::Protocol::MessageType::QUERY_TASK: {
+            GCRP::Protocol::DTO::QueryTaskRequest query_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, query_req)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid query task request");
             }
 
@@ -227,7 +227,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok", taskToJson(*task));
         }
 
-        case ForgeSched::Protocol::MessageType::QUERY_REGRESSION: {
+        case GCRP::Protocol::MessageType::QUERY_REGRESSION: {
             auto filter = RegressionQuery::parse(request.data);
             if (!filter)
                 return buildResponse(request, ResponseCode::INVALID_REQUEST,
@@ -236,7 +236,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                                  regression_service_.query(*filter));
         }
 
-        case ForgeSched::Protocol::MessageType::QUERY_PROGRESS: {
+        case GCRP::Protocol::MessageType::QUERY_PROGRESS: {
             const auto filter = ProgressQuery::parse(request.data);
             if (!filter)
                 return buildResponse(request, ResponseCode::INVALID_REQUEST,
@@ -245,7 +245,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                                  ProgressService(scheduler_).queryProgress(*filter));
         }
 
-        case ForgeSched::Protocol::MessageType::QUERY_ROLLBACK: {
+        case GCRP::Protocol::MessageType::QUERY_ROLLBACK: {
             const auto filter = RollbackQuery::parse(request.data);
             if (!filter)
                 return buildResponse(request, ResponseCode::INVALID_REQUEST,
@@ -254,7 +254,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                                  ProgressService(scheduler_).queryRollbacks(*filter));
         }
 
-        case ForgeSched::Protocol::MessageType::QUERY_STATUS: {
+        case GCRP::Protocol::MessageType::QUERY_STATUS: {
             if (!request.data.is_object() || !request.data.empty())
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid status request");
             uint64_t queued = 0, assigned = 0, running = 0, pending = 0, total = 0;
@@ -291,9 +291,9 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                                   {"regression_cache", regression_service_.cacheStats()}});
         }
 
-        case ForgeSched::Protocol::MessageType::CANCEL_TASK: {
-            ForgeSched::Protocol::DTO::CancelTaskRequest cancel_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, cancel_req)) {
+        case GCRP::Protocol::MessageType::CANCEL_TASK: {
+            GCRP::Protocol::DTO::CancelTaskRequest cancel_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, cancel_req)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid cancel task request");
             }
 
@@ -309,8 +309,8 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
-        case ForgeSched::Protocol::MessageType::QUERY_BATCH:
-        case ForgeSched::Protocol::MessageType::CANCEL_BATCH: {
+        case GCRP::Protocol::MessageType::QUERY_BATCH:
+        case GCRP::Protocol::MessageType::CANCEL_BATCH: {
             if (!batchRequest(request.data))
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid batch id");
             const auto id = request.data["batch_id"].get<std::string>();
@@ -326,9 +326,9 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok", batchResult(id, *snapshot));
         }
 
-        case ForgeSched::Protocol::MessageType::WORKER_REGISTER: {
-            ForgeSched::Protocol::DTO::WorkerRegisterRequest register_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, register_req, error)) {
+        case GCRP::Protocol::MessageType::WORKER_REGISTER: {
+            GCRP::Protocol::DTO::WorkerRegisterRequest register_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, register_req, error)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid worker register request");
             }
 
@@ -378,9 +378,9 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
-        case ForgeSched::Protocol::MessageType::WORKER_HEARTBEAT: {
-            ForgeSched::Protocol::DTO::WorkerHeartbeatRequest heartbeat_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, heartbeat_req)) {
+        case GCRP::Protocol::MessageType::WORKER_HEARTBEAT: {
+            GCRP::Protocol::DTO::WorkerHeartbeatRequest heartbeat_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, heartbeat_req)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid heartbeat request");
             }
 
@@ -392,9 +392,9 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
-        case ForgeSched::Protocol::MessageType::TASK_START: {
-            ForgeSched::Protocol::DTO::TaskStartRequest start_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, start_req)) {
+        case GCRP::Protocol::MessageType::TASK_START: {
+            GCRP::Protocol::DTO::TaskStartRequest start_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, start_req)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid task start request");
             }
 
@@ -428,9 +428,9 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
-        case ForgeSched::Protocol::MessageType::TASK_RESULT: {
-            ForgeSched::Protocol::DTO::TaskResultRequest result_req;
-            if (!ForgeSched::Protocol::DTO::fromJson(request.data, result_req, error)) {
+        case GCRP::Protocol::MessageType::TASK_RESULT: {
+            GCRP::Protocol::DTO::TaskResultRequest result_req;
+            if (!GCRP::Protocol::DTO::fromJson(request.data, result_req, error)) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid task result request");
             }
 
@@ -491,16 +491,16 @@ ProtocolMessage ProtocolRouter::buildResponse(
     const nlohmann::json& data
 ) const {
     ProtocolMessage response;
-    response.version = ForgeSched::Protocol::PROTOCOL_VERSION;
-    response.type = ForgeSched::Protocol::MessageType::RESPONSE;
+    response.version = GCRP::Protocol::PROTOCOL_VERSION;
+    response.type = GCRP::Protocol::MessageType::RESPONSE;
     response.request_id = request.request_id;
 
-    ForgeSched::Protocol::DTO::Response dto;
+    GCRP::Protocol::DTO::Response dto;
     dto.code = static_cast<int>(code);
     dto.message = message;
     dto.data = data;
 
-    response.data = ForgeSched::Protocol::DTO::toJson(dto);
+    response.data = GCRP::Protocol::DTO::toJson(dto);
     response.data["server_instance_id"] = serverInstanceId();
     return response;
 }
@@ -555,4 +555,4 @@ nlohmann::json ProtocolRouter::taskToJson(const Task& task) const {
     return j;
 }
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol

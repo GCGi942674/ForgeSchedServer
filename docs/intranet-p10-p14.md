@@ -10,8 +10,8 @@ claim five simultaneous Vivado cases have been tested.
 
 ## Before starting
 
-- All three hosts need the same ForgeSched source, especially this script.
-  The controller verifies the script hashes. Start from each ForgeSched root.
+- All three hosts need the same GCRP source, especially this script.
+  The controller verifies the script hashes. Start from each GCRP root.
 - Stop all other Server processes on the configured `server.port`, and other
   slot managers on both Worker hosts. The script refuses an occupied Server
   port or an already-owned manager lock. It creates a unique Server SQLite
@@ -47,7 +47,7 @@ python3 -B -u tools/intranet_p10_p14.py --role server --scale-host novarch4
 ```
 
 The controller prints a one-time `--token` command. Copy **that command** to
-each Worker host, from its ForgeSched root, for example:
+each Worker host, from its GCRP root, for example:
 
 ```bash
 python3 -B -u tools/intranet_p10_p14.py --role worker --token TOKEN_FROM_PUDONG
@@ -56,7 +56,7 @@ python3 -B -u tools/intranet_p10_p14.py --role worker --token TOKEN_FROM_PUDONG
 This invocation works in both bash and csh; do not use Bash-only environment
 assignment syntax. The controller waits for both agents, then starts its own
 Server and progresses automatically. The token is not saved in the reports.
-Do not separately launch `build/bin/server` or `worker/slot_manager.py`.
+Do not separately launch `build/bin/gcrp_server` or `worker/slot_manager.py`.
 
 The Server uses one Worker slot for P10–P12. P10 submits three real cases in
 one batch, waits for one RUNNING and two QUEUED, cancels the batch, then waits

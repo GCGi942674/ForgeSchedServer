@@ -174,8 +174,8 @@ class PJtestAdapter:
             raise AdapterError("invalid flow_config")
         if version == 2 and "context" in payload:
             context = payload["context"]
-            if (not isinstance(context, dict) or len(context) > 4 or
-                    any(key not in ("template", "suite", "batch_id", "name") or
+            if (not isinstance(context, dict) or len(context) > 6 or
+                    any(key not in ("template", "suite", "batch_id", "name", "source", "date") or
                         not isinstance(value, str) or len(value) > 128
                         for key, value in context.items())):
                 raise AdapterError("invalid regression context")
@@ -442,7 +442,7 @@ class PJtestAdapter:
                 root, binary, manifest = self._prepare(artifact, task["revision"], directory)
                 self.work_root = root
                 case, _ = self.validate(task)
-                namespace = "forge-" + uuid.uuid4().hex
+                namespace = "gcrp-" + uuid.uuid4().hex
                 env = os.environ.copy()
                 env.update(self.environment)
                 # Do not allow inherited PJTest identities to select another run.

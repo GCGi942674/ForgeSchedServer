@@ -16,23 +16,23 @@ def checkout(path):
     (path / 'galaxcore/test2/run.sh').write_text('#!/bin/sh\n')
 
 def main():
-    with tempfile.TemporaryDirectory(prefix='forge-slot-identity-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='gcrp-slot-identity-') as temporary:
         root = Path(temporary)
         output = root / 'output'
         slots = root / 'slots'
         slots.mkdir()
-        previous = os.environ.get('FORGESCHED_MACHINE_NAME')
+        previous = os.environ.get('GCRP_MACHINE_NAME')
         try:
-            os.environ['FORGESCHED_MACHINE_NAME'] = 'novarch4'
+            os.environ['GCRP_MACHINE_NAME'] = 'novarch4'
             identity = machine_identity(output)
             assert identity['name'] == 'novarch4'
-            os.environ['FORGESCHED_MACHINE_NAME'] = 'changed-hostname'
+            os.environ['GCRP_MACHINE_NAME'] = 'changed-hostname'
             assert machine_identity(output) == identity
         finally:
             if previous is None:
-                del os.environ['FORGESCHED_MACHINE_NAME']
+                del os.environ['GCRP_MACHINE_NAME']
             else:
-                os.environ['FORGESCHED_MACHINE_NAME'] = previous
+                os.environ['GCRP_MACHINE_NAME'] = previous
         assert slot_names(3) == ['slot1', 'slot2', 'slot3']
         for index in (1, 2):
             checkout(slots / 'novarch4-slot-01-slot-0{}'.format(index))

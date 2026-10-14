@@ -120,7 +120,7 @@ void EchoClient::markDisconnected() {
   this->state_ = ClientState::Disconnected;
   this->inputBuffer_.retrieveAll();
   if (had_connection) {
-    LOG_WARN(ForgeSched::LogModule::NETWORK, "client marked disconnected");
+    LOG_WARN(GCRP::LogModule::NETWORK, "client marked disconnected");
   }
 }
 
@@ -199,7 +199,7 @@ void EchoClient::heartbeatLoop() {
       {
         std::ostringstream oss;
         oss << "heartbeat failed, count=" << this->heartbeat_fail_count_;
-        LOG_WARN(ForgeSched::LogModule::NETWORK, oss.str());
+        LOG_WARN(GCRP::LogModule::NETWORK, oss.str());
       }
 
       if (this->heartbeat_fail_count_ >= this->heartbeat_fail_threshold_) {
@@ -222,26 +222,26 @@ bool EchoClient::sendPingUnlocked() {
     std::string response;
     auto encoded = MessageCodec::encode("__ping__");
 
-    LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat ping sending");
+    LOG_INFO(GCRP::LogModule::NETWORK, "heartbeat ping sending");
 
     if (!this->writePacket(encoded)) {
-      LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat send failed");
+      LOG_INFO(GCRP::LogModule::NETWORK, "heartbeat send failed");
       continue;
     }
 
     if (!this->readResponse(response)) {
-      LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat recv failed");
+      LOG_INFO(GCRP::LogModule::NETWORK, "heartbeat recv failed");
       continue;
     }
 
-    LOG_INFO(ForgeSched::LogModule::NETWORK, "heartbeat pong received");
+    LOG_INFO(GCRP::LogModule::NETWORK, "heartbeat pong received");
     return response == "__pong__";
   }
 
   {
     std::ostringstream oss;
     oss << "heartbeat failed, count=" << this->heartbeat_fail_count_;
-    LOG_WARN(ForgeSched::LogModule::NETWORK, oss.str());
+    LOG_WARN(GCRP::LogModule::NETWORK, oss.str());
   }
 
   return false;

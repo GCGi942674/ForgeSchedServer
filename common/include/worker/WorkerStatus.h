@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_WORKER_STATUS_H
-#define FORGESCHED_WORKER_STATUS_H
+#ifndef GCRP_WORKER_STATUS_H
+#define GCRP_WORKER_STATUS_H
 
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 enum class WorkerStatus {
     ONLINE,
@@ -13,6 +13,6 @@ enum class WorkerStatus {
 
 std::string toString(WorkerStatus status);
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_STATUS_H
+#endif // GCRP_WORKER_STATUS_H

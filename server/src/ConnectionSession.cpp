@@ -2,7 +2,7 @@
 #include "protocol/Message_codec.h"
 #include "protocol/dto/Response.h"
 
-namespace ForgeSched {
+namespace GCRP {
 using namespace Protocol;
 ConnectionSession::ConnectionSession(const std::shared_ptr<Connection>& connection,
     WorkerManager& workers, WorkerConnectionRegistry& registry, ProtocolRouter& router,
@@ -73,4 +73,4 @@ void ConnectionSession::sendResponse(const ProtocolMessage& response) {
     if (connection && !connection->sendPacket(MessageCodec::encode(text)))
         LOG_WARN(LogModule::NETWORK, "client response queue rejected");
 }
-} // namespace ForgeSched
+} // namespace GCRP

@@ -1,6 +1,6 @@
 #pragma once
 #include "protocol/MessageType.h"
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 enum class ConnectionRole { UNKNOWN, CLIENT, WORKER };
 
 constexpr bool isClientRequest(MessageType type) {
@@ -30,4 +30,4 @@ constexpr bool isAllowed(ConnectionRole role, MessageType type) {
     }
     return false;
 }
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol

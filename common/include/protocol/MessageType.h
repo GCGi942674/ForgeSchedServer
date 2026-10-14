@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_MESSAGE_TYPE_H
-#define FORGESCHED_MESSAGE_TYPE_H
+#ifndef GCRP_MESSAGE_TYPE_H
+#define GCRP_MESSAGE_TYPE_H
 
 #include <string>
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 enum class MessageType {
     SUBMIT_TASK,
@@ -39,6 +39,6 @@ enum class MessageType {
 std::string toString(MessageType type);
 MessageType messageTypeFromString(const std::string& value);
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol
 
-#endif // FORGESCHED_MESSAGE_TYPE_H
+#endif // GCRP_MESSAGE_TYPE_H

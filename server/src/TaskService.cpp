@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace ForgeSched {
+namespace GCRP {
 
 
 bool TaskService::isPriorityValid(int priority) const {
@@ -111,4 +111,4 @@ bool TaskService::cancelTask(TaskId id) {
     return false;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

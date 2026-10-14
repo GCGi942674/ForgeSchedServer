@@ -24,8 +24,8 @@ cancellation, or active execution cannot be called a business rollback.
 CLI examples:
 
 ```sh
-./build/bin/forgesched_client progress --target route --limit 10
-./build/bin/forgesched_client rollback --target route --from 18925 --to 18926
+./build/bin/gcrp_client progress --target route --limit 10
+./build/bin/gcrp_client rollback --target route --from 18925 --to 18926
 ```
 
 The comparison is based on the latest Task ID, not wall-clock timestamps, so

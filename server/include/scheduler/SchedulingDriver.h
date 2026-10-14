@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_SCHEDULING_DRIVER_H
-#define FORGESCHED_SCHEDULING_DRIVER_H
+#ifndef GCRP_SCHEDULING_DRIVER_H
+#define GCRP_SCHEDULING_DRIVER_H
 
 #include <mutex>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class SchedulingCoordinator;
 
@@ -25,6 +25,6 @@ private:
     bool pending_{false};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_SCHEDULING_DRIVER_H
+#endif // GCRP_SCHEDULING_DRIVER_H

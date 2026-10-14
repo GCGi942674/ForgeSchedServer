@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_LOGGER_H
-#define FORGESCHED_LOGGER_H
+#ifndef GCRP_LOGGER_H
+#define GCRP_LOGGER_H
 
 #include "LogLevel.h"
 #include "LogModule.h"
@@ -10,7 +10,7 @@
 #include <cstring>
 #include <algorithm>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class Logger {
 public:
@@ -52,6 +52,6 @@ private:
     LogLevel current_level_{LogLevel::INFO};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_LOGGER_H
+#endif // GCRP_LOGGER_H

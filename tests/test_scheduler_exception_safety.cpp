@@ -2,7 +2,7 @@
 #include "scheduler/SchedulingCoordinator.h"
 #include <new>
 #include <cstdlib>
-using namespace ForgeSched;
+using namespace GCRP;
 // Fail all subsequent allocations on this thread until explicitly disarmed.
 // Logger background threads and fixture setup are not affected.
 thread_local long allocations_left = -1;

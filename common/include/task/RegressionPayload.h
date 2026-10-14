@@ -1,7 +1,7 @@
 #pragma once
 #include "nlohmann/json.hpp"
 #include <string>
-namespace ForgeSched {
+namespace GCRP {
 inline bool validFlowConfig(const nlohmann::json& flow) {
     if (!flow.is_object() || flow.empty() || flow.size() > 64) return false;
     for (auto it = flow.begin(); it != flow.end(); ++it) {
@@ -33,10 +33,11 @@ inline bool validRegressionPayload(const nlohmann::json& p) {
             !validFlowConfig(p["flow_config"])) return false;
         if (p.contains("context")) {
             const auto& context = p["context"];
-            if (!context.is_object() || context.size() > 4) return false;
+            if (!context.is_object() || context.size() > 6) return false;
             for (auto it = context.begin(); it != context.end(); ++it) {
                 if (it.key() != "template" && it.key() != "suite" &&
-                    it.key() != "batch_id" && it.key() != "name") return false;
+                    it.key() != "batch_id" && it.key() != "name" &&
+                    it.key() != "source" && it.key() != "date") return false;
                 if (!it.value().is_string() || it.value().get<std::string>().size() > 128)
                     return false;
             }

@@ -7,16 +7,16 @@
 #include <vector>
 
 int main() { return testMain([] {
-  char path[] = "/tmp/forgesched-logging-XXXXXX";
+  char path[] = "/tmp/gcrp-logging-XXXXXX";
   CHECK(::mkdtemp(path));
   struct Cleanup { const char* path; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); } } cleanup{path};
-  ForgeSched::Logger::instance().setLogDirectory(path);
-  ForgeSched::Logger::instance().setLevel(ForgeSched::LogLevel::DEBUG);
+  GCRP::Logger::instance().setLogDirectory(path);
+  GCRP::Logger::instance().setLevel(GCRP::LogLevel::DEBUG);
 
-  LOG_DEBUG(ForgeSched::LogModule::SERVER, "debug message");
-  LOG_INFO(ForgeSched::LogModule::SERVER, "info message");
-  LOG_WARN(ForgeSched::LogModule::SERVER, "warn message");
-  LOG_ERROR(ForgeSched::LogModule::SERVER, "error message");
+  LOG_DEBUG(GCRP::LogModule::SERVER, "debug message");
+  LOG_INFO(GCRP::LogModule::SERVER, "info message");
+  LOG_WARN(GCRP::LogModule::SERVER, "warn message");
+  LOG_ERROR(GCRP::LogModule::SERVER, "error message");
 
   std::vector<std::thread> threads;
   for (int i = 0; i < 4; ++i) {
@@ -25,7 +25,7 @@ int main() { return testMain([] {
         {
           std::ostringstream oss;
           oss << "worker=" << i << ", j=" << j;
-          LOG_INFO(ForgeSched::LogModule::SERVER, oss.str());
+          LOG_INFO(GCRP::LogModule::SERVER, oss.str());
         }
       }
     });
@@ -35,9 +35,9 @@ int main() { return testMain([] {
     t.join();
   }
 
-  ForgeSched::Logger::instance().setLevel(ForgeSched::LogLevel::WARN);
-  LOG_INFO(ForgeSched::LogModule::SERVER, "FILTERED_MARKER");
-  LOG_ERROR(ForgeSched::LogModule::TASK, "TASK_ERROR_MARKER");
+  GCRP::Logger::instance().setLevel(GCRP::LogLevel::WARN);
+  LOG_INFO(GCRP::LogModule::SERVER, "FILTERED_MARKER");
+  LOG_ERROR(GCRP::LogModule::TASK, "TASK_ERROR_MARKER");
   std::string server, task, errors;
   for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
     if (!entry.is_regular_file()) continue;
@@ -56,7 +56,7 @@ int main() { return testMain([] {
   CHECK(errors.find("TASK_ERROR_MARKER") != std::string::npos);
   CHECK(errors.find("error message") != std::string::npos);
   CHECK(errors.find("info message") == std::string::npos);
-  CHECK(std::string(ForgeSched::Logger::getBaseName("C:\\src\\test.cpp")) == "test.cpp");
-  CHECK(std::string(ForgeSched::Logger::getBaseName("/src/test.cpp")) == "test.cpp");
-  CHECK(std::string(ForgeSched::Logger::getBaseName(nullptr)).empty());
+  CHECK(std::string(GCRP::Logger::getBaseName("C:\\src\\test.cpp")) == "test.cpp");
+  CHECK(std::string(GCRP::Logger::getBaseName("/src/test.cpp")) == "test.cpp");
+  CHECK(std::string(GCRP::Logger::getBaseName(nullptr)).empty());
 }); }

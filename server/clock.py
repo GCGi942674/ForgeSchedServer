@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Submit a PJTest-style Tasks.yaml suite to ForgeSched once per local day.
+"""Submit a PJTest-style Tasks.yaml suite to GCRP once per local day.
 
 Invoke from cron or manually; this process does not stay resident.
 """
@@ -176,7 +176,8 @@ def build_plan(config):
                                      "timeout_seconds": timeout,
                                      "flow_config": dict(template["flow_config"]),
                                      "context": {"template": name, "suite": suite,
-                                                 "name": task_name, "batch_id": batch_id}}})
+                                                 "name": task_name, "batch_id": batch_id,
+                                                 "source": "scheduled", "date": batch_id[:10]}}})
     if not plan:
         raise ValueError("empty task plan")
     return revision, archive, plan
@@ -187,7 +188,7 @@ def recv_exact(sock, size):
     while len(data) < size:
         chunk = sock.recv(size - len(data))
         if not chunk:
-            raise ConnectionError("ForgeSched connection closed")
+            raise ConnectionError("GCRP connection closed")
         data.extend(chunk)
     return bytes(data)
 
@@ -205,11 +206,11 @@ def request(config, kind, data):
         sock.sendall(struct.pack("!I", len(body)) + body)
         size = struct.unpack("!I", recv_exact(sock, 4))[0]
         if not 0 < size <= MAX_FRAME:
-            raise ValueError("invalid ForgeSched response frame")
+            raise ValueError("invalid GCRP response frame")
         reply = json.loads(recv_exact(sock, size).decode("utf-8"))
     if (not isinstance(reply, dict) or reply.get("type") != "response" or
             reply.get("request_id") != 1 or not isinstance(reply.get("data"), dict)):
-        raise ValueError("invalid ForgeSched response")
+        raise ValueError("invalid GCRP response")
     result = reply["data"]
     if result.get("code") == 3 and result.get("message") == "batch stopped":
         raise BatchStopped("batch stopped")

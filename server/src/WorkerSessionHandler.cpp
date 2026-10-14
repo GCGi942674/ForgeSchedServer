@@ -4,9 +4,9 @@
 #include "logger/Logger.h"
 #include "logger/LogModule.h"
 
-using namespace ForgeSched::Protocol;
+using namespace GCRP::Protocol;
 
-namespace ForgeSched {
+namespace GCRP {
 
 WorkerSessionHandler::WorkerSessionHandler(
     WorkerManager& worker_manager,
@@ -41,4 +41,4 @@ std::string WorkerSessionHandler::onMessage(const std::string& msg) {
     return msg;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

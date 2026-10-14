@@ -4,17 +4,17 @@ from pathlib import Path
 
 
 def load_config():
-    explicit = os.environ.get("FORGESCHED_CONFIG")
+    explicit = os.environ.get("GCRP_CONFIG")
     if explicit is not None:
         if not explicit:
-            raise ValueError("FORGESCHED_CONFIG is empty")
+            raise ValueError("GCRP_CONFIG is empty")
         path = Path(explicit)
     else:
-        path = next((directory / "config" / "forgesched.conf"
+        path = next((directory / "config" / "gcrp.conf"
                      for directory in (Path.cwd(),) + tuple(Path.cwd().parents)
-                     if (directory / "config" / "forgesched.conf").is_file()), None)
+                     if (directory / "config" / "gcrp.conf").is_file()), None)
         if path is None:
-            raise ValueError("missing config; set FORGESCHED_CONFIG")
+            raise ValueError("missing config; set GCRP_CONFIG")
     values = {}
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()

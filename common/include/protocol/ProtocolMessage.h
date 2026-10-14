@@ -1,11 +1,11 @@
-#ifndef FORGESCHED_PROTOCOL_MESSAGE_H
-#define FORGESCHED_PROTOCOL_MESSAGE_H
+#ifndef GCRP_PROTOCOL_MESSAGE_H
+#define GCRP_PROTOCOL_MESSAGE_H
 
 #include "ProtocolVersion.h"
 #include "MessageType.h"
 #include "nlohmann/json.hpp"
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 struct ProtocolMessage {
     uint32_t version{PROTOCOL_VERSION};
@@ -14,6 +14,6 @@ struct ProtocolMessage {
     nlohmann::json data;
 };
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol
 
-#endif // FORGESCHED_PROTOCOL_MESSAGE_H
+#endif // GCRP_PROTOCOL_MESSAGE_H

@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_WORKER_CONNECTION_REGISTRY_H
-#define FORGESCHED_WORKER_CONNECTION_REGISTRY_H
+#ifndef GCRP_WORKER_CONNECTION_REGISTRY_H
+#define GCRP_WORKER_CONNECTION_REGISTRY_H
 
 #include "Connection.h"
 #include <memory>
@@ -10,7 +10,7 @@
 #include <optional>
 #include <functional>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class WorkerConnectionRegistry {
 public:
@@ -61,6 +61,6 @@ private:
     std::atomic<HandleId> next_handle_id_{1};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_CONNECTION_REGISTRY_H
+#endif // GCRP_WORKER_CONNECTION_REGISTRY_H

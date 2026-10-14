@@ -1,5 +1,5 @@
 #include "ControlTestSupport.h"
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include <spawn.h>
 #include <poll.h>
 #include <fcntl.h>
@@ -93,8 +93,8 @@ int main(int argc, char** argv) { return testMain([&] {
     CHECK(nlohmann::json::parse(invoke({"query", std::to_string(id)}).output)["result"]["status"] == "CANCELLED");
     CHECK(invoke({"cancel", std::to_string(id)}).code == 2);
     CHECK(invoke({"query", "999999"}).code == 2);
-    ForgeSched::ForgeClient api("127.0.0.1", host.port);
-    auto batch_submit = api.request(ForgeSched::Protocol::MessageType::SUBMIT_TASK,
+    GCRP::GcrpClient api("127.0.0.1", host.port);
+    auto batch_submit = api.request(GCRP::Protocol::MessageType::SUBMIT_TASK,
         {{"task_type", "REGRESSION"}, {"target", "cli batch"}, {"revision", "18925"},
          {"payload", {{"spec_version", 2}, {"case", "cases/one/run.tcl"},
                       {"flow", "route"}, {"timeout_seconds", 600},

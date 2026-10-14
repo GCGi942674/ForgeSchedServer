@@ -2,7 +2,7 @@
 #include "scheduler/SchedulingCoordinator.h"
 #include <condition_variable>
 #include <functional>
-using namespace ForgeSched;
+using namespace GCRP;
 struct Dispatcher : WorkerDispatcher {
     std::function<bool(const Task&)> action;
     bool dispatch(const WorkerId&, const Task& task) override { return action(task); }

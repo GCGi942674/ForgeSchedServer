@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Supervise one independent ForgeSched Worker process per local slot."""
+"""Supervise one independent GCRP Worker process per local slot."""
 import argparse
 import fcntl
 import hashlib
@@ -97,7 +97,7 @@ class SlotManager:
             return
         output = self.output(slot)
         remove(output / '.drain')
-        args = [sys.executable, '-B', '-u', str(Path(__file__).with_name('forge_worker.py')),
+        args = [sys.executable, '-B', '-u', str(Path(__file__).with_name('gcrp_worker.py')),
                 '--worker-id', self.worker_id(slot), '--machine-id', self.machine,
                 '--slot-id', slot, '--output', str(output)]
         if self.demo:

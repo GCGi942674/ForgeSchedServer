@@ -4,8 +4,8 @@ Clock 每次运行生成独立的 `batch_id`，记录在状态文件和每个 ca
 `payload.context.batch_id` 中。启动输出的 `BATCH:` 行可直接复制到 CLI：
 
 ```sh
-./build/bin/forgesched_client query-batch BATCH_ID
-./build/bin/forgesched_client cancel-batch BATCH_ID
+./build/bin/gcrp_client query-batch BATCH_ID
+./build/bin/gcrp_client cancel-batch BATCH_ID
 ```
 
 取消在调度器锁内完成：同批 PENDING/QUEUED case 变成 CANCELLED，

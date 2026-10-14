@@ -2,7 +2,7 @@
 #include "worker/WorkerSession.h"
 #include "protocol/ConnectionRole.h"
 
-namespace ForgeSched {
+namespace GCRP {
 // Access is serialized by WorkerServer's session mutex, including registration/close.
 class ConnectionSession {
 public:
@@ -20,4 +20,4 @@ private:
     Protocol::ProtocolRouter& router_;
     WorkerSession worker_;
 };
-} // namespace ForgeSched
+} // namespace GCRP

@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_LOG_MODULE_H
-#define FORGESCHED_LOG_MODULE_H
+#ifndef GCRP_LOG_MODULE_H
+#define GCRP_LOG_MODULE_H
 
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 enum class LogModule {
     SERVER,
@@ -26,6 +26,6 @@ inline std::string toString(LogModule module) {
     }
 }
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_LOG_MODULE_H
+#endif // GCRP_LOG_MODULE_H

@@ -10,7 +10,7 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 EchoServer::EchoServer(int port, EchoHandler &handler, int signal_fd,
                        size_t io_thread_num, size_t worker_thread_num, std::string bind_ip)

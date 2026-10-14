@@ -7,9 +7,9 @@
 #include "logger/LogModule.h"
 #include "Logging.h"
 
-using namespace ForgeSched;
+using namespace GCRP;
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 std::string ProtocolCodec::messageTypeToString(MessageType type) {
     return toString(type);
@@ -154,4 +154,4 @@ bool ProtocolCodec::encode(
     }
 }
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol

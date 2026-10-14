@@ -1,4 +1,4 @@
-# ForgeSched Server API v1 (P17)
+# GCRP Server API v1 (P17)
 
 ## Transport and compatibility
 
@@ -117,10 +117,10 @@ project identity migration or durable Worker inventory is implemented by P17.
 ## CLI and acceptance
 
 ```bash
-./build/bin/forgesched_client capabilities
-./build/bin/forgesched_client tasks --status QUEUED --limit 20
-./build/bin/forgesched_client workers --machine-id novarch4
-./build/bin/forgesched_client status
+./build/bin/gcrp_client capabilities
+./build/bin/gcrp_client tasks --status QUEUED --limit 20
+./build/bin/gcrp_client workers --machine-id novarch4
+./build/bin/gcrp_client status
 ```
 
 The CLI retains exit codes 0 success, 2 Server rejection, 1 transport failure,

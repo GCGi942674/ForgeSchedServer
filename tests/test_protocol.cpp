@@ -12,8 +12,8 @@
 #include "worker/WorkerDispatcher.h"
 #include <fstream>
 #include <filesystem>
-using namespace ForgeSched;
-using namespace ForgeSched::Protocol;
+using namespace GCRP;
+using namespace GCRP::Protocol;
 
 struct StubDispatcher : WorkerDispatcher {
     bool dispatch(const WorkerId&, const Task&) override { return false; }
@@ -92,7 +92,7 @@ int main() { return testMain([] {
     CHECK(route("cancel_task", {{"task_id", id}})["code"] != 0);
     CHECK(route("response", nlohmann::json::object())["code"] != 0);
     // A unique fixture prevents parallel tests from changing each other's config.
-    char path[] = "/tmp/forgesched-config-XXXXXX";
+    char path[] = "/tmp/gcrp-config-XXXXXX";
     Fd temp(::mkstemp(path)); CHECK(temp.value >= 0);
     struct Remove { const char* path; ~Remove() { ::unlink(path); } } cleanup{path};
     { std::ofstream out(path); CHECK(out.good());

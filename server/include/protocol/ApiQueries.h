@@ -6,7 +6,7 @@
 #include <set>
 #include <tuple>
 
-namespace ForgeSched::Api {
+namespace GCRP::Api {
 using Json = nlohmann::json;
 // Throw only validation errors here; Router converts these explicitly to code 1.
 inline void validate(const Json& q, const std::set<std::string>& keys) {
@@ -126,4 +126,4 @@ inline Json capabilities(const Json& q) {
             {"worker_inventory_persistent", false}, {"authentication", false},
             {"cross_page_snapshot", false}, {"project_scope", false}}}};
 }
-} // namespace ForgeSched::Api
+} // namespace GCRP::Api

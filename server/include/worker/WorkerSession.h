@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_WORKER_SESSION_H
-#define FORGESCHED_WORKER_SESSION_H
+#ifndef GCRP_WORKER_SESSION_H
+#define GCRP_WORKER_SESSION_H
 
 #include "worker/WorkerManager.h"
 #include "worker/WorkerConnectionRegistry.h"
@@ -18,7 +18,7 @@
 #include <vector>
 #include <cstring>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class SchedulingDriver;
 
@@ -66,6 +66,6 @@ private:
     static constexpr uint32_t kProtocolVersion = 1;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_SESSION_H
+#endif // GCRP_WORKER_SESSION_H

@@ -3,7 +3,7 @@
 #include "logger/LogModule.h"
 #include <limits>
 
-namespace ForgeSched::Protocol::DTO {
+namespace GCRP::Protocol::DTO {
 
 // WorkerRegisterRequest
 bool fromJson(const nlohmann::json& j, WorkerRegisterRequest& out, ProtocolError& error) {
@@ -92,4 +92,4 @@ nlohmann::json toJson(const WorkerHeartbeatRequest& value) {
     return j;
 }
 
-} // namespace ForgeSched::Protocol::DTO
+} // namespace GCRP::Protocol::DTO

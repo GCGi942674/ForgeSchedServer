@@ -10,7 +10,7 @@
 #include "protocol/Message_codec.h"
 #include "Logging.h"
 
-namespace ForgeSched {
+namespace GCRP {
 
 NetworkWorkerDispatcher::NetworkWorkerDispatcher(
     WorkerConnectionRegistry& registry,
@@ -82,4 +82,4 @@ bool NetworkWorkerDispatcher::dispatch(
     }
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

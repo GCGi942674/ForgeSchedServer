@@ -9,7 +9,7 @@
 #include <chrono>
 #include <stdexcept>
 
-namespace ForgeSched {
+namespace GCRP {
 namespace {
 constexpr uint64_t kFileLimit = 1024ULL * 1024 * 1024;
 constexpr size_t kChunkLimit = 16384;
@@ -185,4 +185,4 @@ size_t RunLogArchive::pruneOlderThan(int days) {
     }
     return removed;
 }
-} // namespace ForgeSched
+} // namespace GCRP

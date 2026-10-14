@@ -54,7 +54,7 @@ def main():
         if args.connect:
             print('[QT-GUI] read-only Server probe', flush=True)
             probe_env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
-            run([str(build / 'bin' / 'forgesched_gui'), '--probe'], ROOT, 'server_probe', env=probe_env)
+            run([str(build / 'bin' / 'gcrp_gui'), '--probe'], ROOT, 'server_probe', env=probe_env)
         report['display'] = os.environ.get('DISPLAY', '')
         report['wayland_display'] = os.environ.get('WAYLAND_DISPLAY', '')
         qmake = config.get('tools.qt_qmake') or shutil.which('qmake')
@@ -68,7 +68,7 @@ def main():
             if not report['display'] and not report['wayland_display']:
                 raise ValueError('no DISPLAY/WAYLAND_DISPLAY; open a desktop terminal first')
             print('[QT-GUI] close the demo window to finish', flush=True)
-            run([str(build / 'bin' / 'forgesched_gui'), '--demo'], ROOT, 'visible_demo', timeout=3600)
+            run([str(build / 'bin' / 'gcrp_gui'), '--demo'], ROOT, 'visible_demo', timeout=3600)
             report['verdict'] = 'PASS'
         else:
             report['note'] = 'Headless tests passed; visible desktop/plugin compatibility still needs --show-demo.'

@@ -1,6 +1,6 @@
 # One-entry intranet acceptance
 
-Use the same ForgeSched revision and `config/forgesched.conf` on the Server
+Use the same GCRP revision and `config/gcrp.conf` on the Server
 and both Worker machines. As in the earlier acceptance run, set
 `smoke.revision`, `smoke.case`, `smoke.target`, the Server address, artifact
 directory and Worker SVN URL for real PJtest execution.

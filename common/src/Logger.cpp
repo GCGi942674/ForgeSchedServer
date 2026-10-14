@@ -7,7 +7,7 @@
 #include <sstream>
 #include <thread>
 
-namespace ForgeSched {
+namespace GCRP {
 
 Logger& Logger::instance() {
     static Logger instance;
@@ -162,4 +162,4 @@ size_t Logger::pruneOldLogs(int days) {
     return removed;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

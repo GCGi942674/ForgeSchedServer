@@ -1,11 +1,11 @@
-#ifndef FORGESCHED_SCHEDULING_COORDINATOR_H
-#define FORGESCHED_SCHEDULING_COORDINATOR_H
+#ifndef GCRP_SCHEDULING_COORDINATOR_H
+#define GCRP_SCHEDULING_COORDINATOR_H
 
 #include "scheduler/Scheduler.h"
 #include "worker/WorkerDispatcher.h"
 #include <cstdint>
 
-namespace ForgeSched {
+namespace GCRP {
 
 struct SchedulingResult {
     size_t assigned_count{0};
@@ -31,6 +31,6 @@ private:
     WorkerDispatcher& dispatcher_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_SCHEDULING_COORDINATOR_H
+#endif // GCRP_SCHEDULING_COORDINATOR_H

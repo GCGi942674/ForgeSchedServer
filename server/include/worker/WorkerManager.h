@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_WORKER_MANAGER_H
-#define FORGESCHED_WORKER_MANAGER_H
+#ifndef GCRP_WORKER_MANAGER_H
+#define GCRP_WORKER_MANAGER_H
 
 #include "worker/Worker.h"
 #include "worker/WorkerStatus.h"
@@ -10,7 +10,7 @@
 #include <chrono>
 #include <optional>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class WorkerManager {
 public:
@@ -49,6 +49,6 @@ private:
     std::unordered_map<WorkerId, std::unique_ptr<Worker>> workers_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_MANAGER_H
+#endif // GCRP_WORKER_MANAGER_H

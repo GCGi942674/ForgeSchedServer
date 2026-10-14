@@ -6,8 +6,8 @@
 #include "scheduler/SchedulingCoordinator.h"
 #include "scheduler/SchedulingDriver.h"
 #include "worker/WorkerDispatcher.h"
-using namespace ForgeSched;
-using namespace ForgeSched::Protocol;
+using namespace GCRP;
+using namespace GCRP::Protocol;
 struct Dispatcher : WorkerDispatcher {
     bool dispatch(const WorkerId&, const Task&) override { return false; }
 };

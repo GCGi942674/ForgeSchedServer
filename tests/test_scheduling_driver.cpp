@@ -5,7 +5,7 @@
 #include <condition_variable>
 #include <functional>
 #include <atomic>
-using namespace ForgeSched;
+using namespace GCRP;
 
 struct Dispatcher : WorkerDispatcher {
     std::function<bool(const Task&)> action;

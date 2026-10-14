@@ -1,7 +1,7 @@
 #include "TestSupport.h"
 #include "WorkerServer.h"
 #include <sys/eventfd.h>
-using namespace ForgeSched;
+using namespace GCRP;
 struct RunningServer {
     Fd signal{::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)};
     WorkerServer worker; EchoHandler handler;

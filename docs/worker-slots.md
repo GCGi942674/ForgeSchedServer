@@ -9,7 +9,7 @@ worker.slots=3
 
 Start `python3 -B -u worker/slot_manager.py`. On a host named `novarch4`,
 the manager starts `slot1`, `slot2`, `slot3`. Each child registers itself
-with ForgeSched as `novarch4-slot1`, `novarch4-slot2`,
+with GCRP as `novarch4-slot1`, `novarch4-slot2`,
 `novarch4-slot3`. Each gets its own full SVN working copy under
 `worker/workers_slots/<worker-id>/galaxcore`. Existing complete copies are
 reused. `worker.checkout_parallelism=1` limits SVN checkout concurrency,
@@ -20,7 +20,7 @@ At first start the manager saves a machine name and local UUID in
 starts, even if the OS hostname changes. The Server currently groups Workers
 by the saved machine name. The UUID is local state reserved for a later
 machine-level protocol; it is not yet sent to the Server. Give hosts distinct
-hostnames. The optional `FORGESCHED_MACHINE_NAME` environment variable can
+hostnames. The optional `GCRP_MACHINE_NAME` environment variable can
 set the name **before the first start** for a test or a duplicate hostname;
 routine deployment does not need it. Do not copy the output directory,
 including the identity file, to another physical Worker host.
@@ -34,7 +34,7 @@ remain for future expansion. Normal `SIGTERM` also drains all slots.
 
 ## Existing SVN copies
 
-Stop the old manager before changing to `worker.slots`. From the ForgeSched
+Stop the old manager before changing to `worker.slots`. From the GCRP
 root, preview the reuse plan:
 
 ```bash

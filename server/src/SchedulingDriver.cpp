@@ -2,7 +2,7 @@
 #include "scheduler/SchedulingCoordinator.h"
 #include <exception>
 
-namespace ForgeSched {
+namespace GCRP {
 
 SchedulingDriver::SchedulingDriver(SchedulingCoordinator& coordinator)
     : coordinator_(coordinator) {}
@@ -31,4 +31,4 @@ void SchedulingDriver::requestSchedule() {
     if (failure) std::rethrow_exception(failure);
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

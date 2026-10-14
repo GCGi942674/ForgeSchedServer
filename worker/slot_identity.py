@@ -32,7 +32,7 @@ def machine_identity(output_root):
                     not re.fullmatch(r'[0-9a-f]{32}', data['uid'])):
                 raise RuntimeError('invalid machine identity: ' + str(path))
             return data
-        raw = os.environ.get('FORGESCHED_MACHINE_NAME') or socket.gethostname().split('.')[0]
+        raw = os.environ.get('GCRP_MACHINE_NAME') or socket.gethostname().split('.')[0]
         name = re.sub(r'[^A-Za-z0-9_-]', '_', raw)[:56]
         if not name or not name[0].isalnum():
             name = 'host-' + uuid.uuid4().hex[:12]

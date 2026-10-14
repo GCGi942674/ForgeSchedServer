@@ -1,7 +1,7 @@
 #include "EchoHandler.h"
 #include "Logging.h"
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 std::string EchoHandler::onMessage(const std::string &msg) {
   if (msg == "__ping__") {

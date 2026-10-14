@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 struct ProgressQuery {
     std::string target;
@@ -37,4 +37,4 @@ private:
     const Scheduler& scheduler_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP

@@ -95,7 +95,7 @@ as a shell command. The GUI's target field remains explicit rather than guessing
 device metadata for arbitrary directory structures.
 
 ```sh
-./build/gui/bin/forgesched_gui --config config/forgesched.conf
+./build/gui/bin/gcrp_gui --config config/gcrp.conf
 ```
 
 The address and timeout come from `network.server_ip`, `server.port` and
@@ -110,5 +110,5 @@ cd build/gui
 ctest --output-on-failure
 ```
 
-For a combined build, opt in with `-DFORGESCHED_BUILD_QT_GUI=ON`; otherwise Qt is
+For a combined build, opt in with `-DGCRP_BUILD_QT_GUI=ON`; otherwise Qt is
 never searched. The standalone build avoids the Linux-only Server targets.

@@ -1,7 +1,7 @@
 #include "worker/Worker.h"
 #include "worker/WorkerStatus.h"
 
-namespace ForgeSched {
+namespace GCRP {
 
 std::string toString(WorkerStatus status) {
     switch (status) {
@@ -55,4 +55,4 @@ bool Worker::releaseSlot() {
     return true;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

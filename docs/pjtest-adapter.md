@@ -6,15 +6,15 @@
 ## 启动配置
 
 生产模式直接读取共享配置；演示必须显式 `--demo`，且拒绝业务 payload。
-Server、CLI、Worker 共用 `config/forgesched.conf`。多机部署时可用
-`FORGESCHED_CONFIG` 指向每台机器自己的配置副本：
+Server、CLI、Worker 共用 `config/gcrp.conf`。多机部署时可用
+`GCRP_CONFIG` 指向每台机器自己的配置副本：
 `server.bind_ip` 是监听地址，`network.server_ip` 是 Client/Worker 连接地址，
 `server.port` 为同一个端口。默认只监听本机；不要在无认证/TLS 的情况下开放公网。
 Worker 的 `worker.output_dir`、`worker.slots_root` 和
 `worker.artifact_root` 路径在该配置中集中指定；
 相对路径均相对于进程启动目录。
 
-工作机配置例子（从 ForgeSched 仓库根目录启动）：
+工作机配置例子（从 GCRP 仓库根目录启动）：
 
 ```ini
 network.server_ip=192.168.10.20
@@ -40,8 +40,8 @@ worker.terminate_grace_seconds=30
 覆盖已有副本。SVN 若需要认证，须预先配置工作机账号的 SVN 凭据。
 
 ```sh
-python3 worker/forge_worker.py --worker-id pjtest-slot-1
-./build/bin/forgesched_client submit --target xcvu9p --revision 58231 --case cases/smoke/run.tcl --flow route --case-timeout 600
+python3 worker/gcrp_worker.py --worker-id pjtest-slot-1
+./build/bin/gcrp_client submit --target xcvu9p --revision 58231 --case cases/smoke/run.tcl --flow route --case-timeout 600
 ```
 
 无需单独编写 PJtest JSON 配置。`--pjtest-config` 仅保留给旧版离线夹具。

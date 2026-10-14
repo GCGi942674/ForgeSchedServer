@@ -6,13 +6,13 @@ must finish as PASS on distinct Worker and machine IDs, with overlapping
 Server-recorded execution intervals and no retries. It does not deliberately
 disconnect or kill a running GalaxCore/Vivado process.
 
-Use the same ForgeSched commit on all three hosts, one shared ZIP revision
+Use the same GCRP commit on all three hosts, one shared ZIP revision
 accessible on each machine, and the same Server IP/port. Keep the previously
 successful Server work root, artifact root, route template, and case path.
 Use a free port and a dedicated `database.path`. Do not run another smoke
 script, slot manager, or Server on the same port during this test.
 
-Server `config/forgesched.conf` example:
+Server `config/gcrp.conf` example:
 
 ```ini
 smoke.revision=18954
@@ -23,7 +23,7 @@ smoke.run_count=2
 smoke.expected_worker_ids=
 smoke.require_distinct_machines=1
 smoke.report_dir=./intranet-report
-database.path=./data/forgesched-two-machine-smoke.db
+database.path=./data/gcrp-two-machine-smoke.db
 ```
 
 Each slot registers itself. The acceptance script discovers two ONLINE slots;
@@ -58,7 +58,7 @@ out automatically; existing checkouts are not deleted or renamed.
 `smoke.run_count=2` is a **Server** setting for the total number of Tasks;
 each Worker launcher expects only its own one result.
 
-Start these in order, each from its ForgeSched root:
+Start these in order, each from its GCRP root:
 
 ```bash
 # Server machine

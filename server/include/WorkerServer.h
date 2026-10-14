@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_WORKER_SERVER_H
-#define FORGESCHED_WORKER_SERVER_H
+#ifndef GCRP_WORKER_SERVER_H
+#define GCRP_WORKER_SERVER_H
 
 #include "EchoServer.h"
 #include "WorkerSessionHandler.h"
@@ -18,7 +18,7 @@
 #include "ConnectionSession.h"
 #include "persistence/StateStore.h"
 
-namespace ForgeSched {
+namespace GCRP {
 
 class WorkerServer {
 public:
@@ -53,6 +53,6 @@ private:
     bool stopping_{false};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_SERVER_H
+#endif // GCRP_WORKER_SERVER_H

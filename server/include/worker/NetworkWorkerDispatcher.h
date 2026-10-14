@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_NETWORK_WORKER_DISPATCHER_H
-#define FORGESCHED_NETWORK_WORKER_DISPATCHER_H
+#ifndef GCRP_NETWORK_WORKER_DISPATCHER_H
+#define GCRP_NETWORK_WORKER_DISPATCHER_H
 
 #include "worker/WorkerDispatcher.h"
 #include "worker/WorkerConnectionRegistry.h"
@@ -10,7 +10,7 @@
 #include <atomic>
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class NetworkWorkerDispatcher : public WorkerDispatcher {
 public:
@@ -37,6 +37,6 @@ private:
     std::atomic<uint64_t> next_request_id_{1};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_NETWORK_WORKER_DISPATCHER_H
+#endif // GCRP_NETWORK_WORKER_DISPATCHER_H

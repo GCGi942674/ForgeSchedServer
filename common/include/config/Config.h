@@ -1,10 +1,10 @@
-#ifndef FORGESCHED_CONFIG_H
-#define FORGESCHED_CONFIG_H
+#ifndef GCRP_CONFIG_H
+#define GCRP_CONFIG_H
 
 #include <string>
 #include <unordered_map>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class Config {
 public:
@@ -30,6 +30,6 @@ private:
     std::unordered_map<std::string, std::string> config_map_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_CONFIG_H
+#endif // GCRP_CONFIG_H

@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace ForgeSched {
+namespace GCRP {
 namespace {
 std::string stringField(const nlohmann::json& value, const char* key) {
     if (!value.is_object() || !value.contains(key) || !value[key].is_string()) return {};
@@ -215,4 +215,4 @@ nlohmann::json ProgressService::queryRollbacks(const RollbackQuery& query) const
                 nlohmann::json(items.back()["current_task_id"]) : nlohmann::json(nullptr)}};
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

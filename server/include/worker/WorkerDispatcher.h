@@ -1,10 +1,10 @@
-#ifndef FORGESCHED_WORKER_DISPATCHER_H
-#define FORGESCHED_WORKER_DISPATCHER_H
+#ifndef GCRP_WORKER_DISPATCHER_H
+#define GCRP_WORKER_DISPATCHER_H
 
 #include "task/Task.h"
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 using WorkerId = std::string;
 
@@ -18,6 +18,6 @@ public:
     ) = 0;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_DISPATCHER_H
+#endif // GCRP_WORKER_DISPATCHER_H

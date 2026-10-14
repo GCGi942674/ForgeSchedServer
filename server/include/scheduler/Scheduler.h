@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_SCHEDULER_H
-#define FORGESCHED_SCHEDULER_H
+#ifndef GCRP_SCHEDULER_H
+#define GCRP_SCHEDULER_H
 
 #include "task/Task.h"
 #include "task/TaskStatus.h"
@@ -14,7 +14,7 @@
 #include <unordered_set>
 #include <algorithm>
 
-namespace ForgeSched {
+namespace GCRP {
 class WorkerDispatcher;
 class StateStore;
 
@@ -109,6 +109,6 @@ private:
 
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_SCHEDULER_H
+#endif // GCRP_SCHEDULER_H

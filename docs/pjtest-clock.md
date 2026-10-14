@@ -2,7 +2,7 @@
 
 `server/clock.py` 读取 `server/Tasks.yaml` 与 `server/templates/*.json`，
 一次选定一个 `GalaxCore_N.zip` 版本，展开 runlist 或目录中的 `run.tcl`，
-然后通过 ForgeSched TCP+JSON 提交任务。每个 case 是独立的 ForgeSched Task；
+然后通过 GCRP TCP+JSON 提交任务。每个 case 是独立的 GCRP Task；
 目前尚没有 PJTest 原来的父任务、attempt、重试和汇总报告。不要把此实现理解为
 旧 `clock.py` 完全等价替换。
 
@@ -31,5 +31,5 @@ dry-run 成功、Worker 在线、Server 无未完成任务以及磁盘容量足�
 避免重复执行。Server 当前不持久化任务；Server 重启后无法从旧任务 ID
 自动恢复日任务，必须人工处理，不能直接删除时钟状态文件来绕过。
 当前强制 `max_retry=0`，不支持旧 PJTest 的失败重试语义。
-批次运行中可用 `forgesched_client cancel-batch BATCH_ID` 停止剩余 case；
+批次运行中可用 `gcrp_client cancel-batch BATCH_ID` 停止剩余 case；
 运行中的 case 会正常完成，详见 `docs/batch-stop.md`。

@@ -9,12 +9,12 @@
 using namespace std;
 
 int main() {
-  if (!ForgeSched::Config::instance().loadDefault()) {
-    cerr << "Missing config; set FORGESCHED_CONFIG" << endl;
+  if (!GCRP::Config::instance().loadDefault()) {
+    cerr << "Missing config; set GCRP_CONFIG" << endl;
     return 1;
   }
-  const auto ip = ForgeSched::Config::instance().getString("network.server_ip", "");
-  const auto port = ForgeSched::Config::instance().getInt("server.port", 0);
+  const auto ip = GCRP::Config::instance().getString("network.server_ip", "");
+  const auto port = GCRP::Config::instance().getInt("server.port", 0);
   if (ip.empty() || port < 1 || port > 65535) return 1;
   EchoClient client(ip, port);
   if (!client.connect()) {

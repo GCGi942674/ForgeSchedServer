@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 Connection::Connection(EventLoop *loop, int fd)
     : owner_loop_(loop), fd_(fd), state_(ConnState::Connected) {

@@ -17,7 +17,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "worker"))
 from pjtest_adapter import PJtestAdapter, AdapterError, tree_digest, file_digest
 from process_executor import ProcessExecutor, ExecutionContainmentError
-from forge_worker import Worker, shared_pjtest_settings
+from gcrp_worker import Worker, shared_pjtest_settings
 from runtime_config import load_config
 
 
@@ -39,7 +39,7 @@ def gone(pid):
 
 class Safety(unittest.TestCase):
     def test_idle_disconnected_slot_drains_without_server(self):
-        with tempfile.TemporaryDirectory(prefix='forge-drain-') as directory:
+        with tempfile.TemporaryDirectory(prefix='gcrp-drain-') as directory:
             output = Path(directory)
             (output / '.drain').write_text('{}')
             args = SimpleNamespace(output=output, pjtest_config=None,
@@ -50,12 +50,12 @@ class Safety(unittest.TestCase):
             self.assertTrue(worker.draining)
 
     def test_shared_config_and_adapter_path_override(self):
-        with tempfile.TemporaryDirectory(prefix="forge-config-") as directory:
-            path = Path(directory) / "forgesched.conf"
+        with tempfile.TemporaryDirectory(prefix="gcrp-config-") as directory:
+            path = Path(directory) / "gcrp.conf"
             path.write_text("# comment\nnetwork.server_ip=10.0.0.7\nserver.port=12345\n"
                             "worker.output_dir=/tmp/worker-runs\n", encoding="utf-8")
-            previous = os.environ.get("FORGESCHED_CONFIG")
-            os.environ["FORGESCHED_CONFIG"] = str(path)
+            previous = os.environ.get("GCRP_CONFIG")
+            os.environ["GCRP_CONFIG"] = str(path)
             try:
                 values = load_config()
                 self.assertEqual(values["network.server_ip"], "10.0.0.7")
@@ -64,12 +64,12 @@ class Safety(unittest.TestCase):
                 self.assertEqual(load_config()["server.port"], "2")
             finally:
                 if previous is None:
-                    os.environ.pop("FORGESCHED_CONFIG", None)
+                    os.environ.pop("GCRP_CONFIG", None)
                 else:
-                    os.environ["FORGESCHED_CONFIG"] = previous
+                    os.environ["GCRP_CONFIG"] = previous
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="forge-safety-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="gcrp-safety-")
         self.root = Path(self.tmp.name)
         subprocess.run([sys.executable, "-B", str(REPO / "tests/fixtures/pjtest/setup.py"),
                         str(self.root)], check=True, stdout=subprocess.DEVNULL)
@@ -347,7 +347,7 @@ class Safety(unittest.TestCase):
             worker.assignment(dict(type="task_assign", data=self.task))
 
     def test_worker_requires_explicit_mode(self):
-        result = subprocess.run([sys.executable, "-B", str(REPO / "worker/forge_worker.py"),
+        result = subprocess.run([sys.executable, "-B", str(REPO / "worker/gcrp_worker.py"),
                                  "--worker-id", "no-mode"], stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         self.assertEqual(result.returncode, 2)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One entry point for offline and three-host ForgeSched acceptance (Python 3.6)."""
+"""One entry point for offline and three-host GCRP acceptance (Python 3.6)."""
 import argparse
 from datetime import datetime, timezone
 import json

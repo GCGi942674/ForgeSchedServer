@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_TASK_DTO_H
-#define FORGESCHED_TASK_DTO_H
+#ifndef GCRP_TASK_DTO_H
+#define GCRP_TASK_DTO_H
 
 #include "../ProtocolError.h"
 #include "task/Task.h"
@@ -8,7 +8,7 @@
 #include "nlohmann/json.hpp"
 #include <string>
 
-namespace ForgeSched::Protocol::DTO {
+namespace GCRP::Protocol::DTO {
 
 struct SubmitTaskRequest {
     TaskType task_type{TaskType::UNKNOWN};
@@ -70,6 +70,6 @@ nlohmann::json toJson(const TaskResultRequest& value);
 bool fromJson(const nlohmann::json& j, TaskAssignRequest& out);
 nlohmann::json toJson(const TaskAssignRequest& value);
 
-} // namespace ForgeSched::Protocol::DTO
+} // namespace GCRP::Protocol::DTO
 
-#endif // FORGESCHED_TASK_DTO_H
+#endif // GCRP_TASK_DTO_H

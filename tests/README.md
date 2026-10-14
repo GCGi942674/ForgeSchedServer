@@ -169,6 +169,6 @@ Reference: https://cmake.org/cmake/help/v3.15/manual/cmake.1.html
 
 ## WSL location
 
-The authoritative working copy is `/home/zhenlei/projects/ForgeSched` in WSL
+The authoritative working copy is `/home/zhenlei/projects/GalaxCoreRegressionPlatform` in WSL
 Ubuntu. `/mnt/d/study/Vivado_test/Server` is the retained Windows backup; it is
 not updated in parallel. Configure a fresh build directory after moving sources.

@@ -1,12 +1,12 @@
-#ifndef FORGESCHED_PROTOCOL_VERSION_H
-#define FORGESCHED_PROTOCOL_VERSION_H
+#ifndef GCRP_PROTOCOL_VERSION_H
+#define GCRP_PROTOCOL_VERSION_H
 
 #include <cstdint>
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 constexpr uint32_t PROTOCOL_VERSION = 1;
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol
 
-#endif // FORGESCHED_PROTOCOL_VERSION_H
+#endif // GCRP_PROTOCOL_VERSION_H

@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <unistd.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 int main() {
     WorkerManager workers;
@@ -83,7 +83,7 @@ int main() {
         {"from_revision", "18926"}, {"to_revision", "18927"}});
     assert(service.queryRollbacks(later)["total"] == 0);
 
-    char directory[] = "/tmp/forge-progress-XXXXXX";
+    char directory[] = "/tmp/gcrp-progress-XXXXXX";
     assert(::mkdtemp(directory));
     struct Cleanup {
         const char* path;

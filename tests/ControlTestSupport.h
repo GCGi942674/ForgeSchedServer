@@ -4,7 +4,7 @@
 #include <sys/eventfd.h>
 struct ControlTestServer {
     Fd signal{::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)};
-    ForgeSched::WorkerServer worker;
+    GCRP::WorkerServer worker;
     EchoHandler handler;
     int port{freePort()};
     EchoServer server{port, handler, signal.value, 2, 2};

@@ -1,12 +1,12 @@
 #include "ControlTestSupport.h"
-#include "ForgeClient.h"
-using namespace ForgeSched;
+#include "GcrpClient.h"
+using namespace GCRP;
 
 int main() { return testMain([] {
     ControlTestServer host;
     auto ready = connectTo(host.port);
     ready.reset();
-    ForgeClient client("127.0.0.1", host.port);
+    GcrpClient client("127.0.0.1", host.port);
     const std::string batch = "daily-18925-test";
     auto submit = [&](const std::string& group, const std::string& name) {
         return client.request(Protocol::MessageType::SUBMIT_TASK,

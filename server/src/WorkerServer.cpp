@@ -5,9 +5,9 @@
 #include "scheduler/SchedulingDriver.h"
 #include "config/Config.h"
 
-using namespace ForgeSched::Protocol;
+using namespace GCRP::Protocol;
 
-namespace ForgeSched {
+namespace GCRP {
 
 WorkerServer::WorkerServer(bool persistent)
 {
@@ -96,4 +96,4 @@ SchedulingResult WorkerServer::runOnce() {
     return coordinator_ptr_->runOnce();
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

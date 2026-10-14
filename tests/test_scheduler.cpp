@@ -5,7 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <set>
-using namespace ForgeSched;
+using namespace GCRP;
 struct Dispatcher : WorkerDispatcher {
     int mode{0};
     bool dispatch(const WorkerId&, const Task&) override {
@@ -117,4 +117,26 @@ int main() { return testMain([] {
     std::set<TaskId> unique;
     for (const auto& batch : generated) unique.insert(batch.begin(), batch.end());
     CHECK(unique.size() == 4000 && *unique.begin() == 1 && *unique.rbegin() == 4000);
+    // Independent users submit concurrently; FIFO follows committed queue sequence, not ID.
+    WorkerManager concurrentWorkers;Scheduler concurrentQueue(concurrentWorkers);Dispatcher sink;
+    SchedulingCoordinator concurrentCoordinator(concurrentQueue,sink);
+    SchedulingDriver concurrentDriver(concurrentCoordinator);TaskService concurrentService(concurrentQueue,concurrentDriver);
+    std::atomic<int> failures{0};threads.clear();
+    for(int user=0;user<4;++user)threads.emplace_back([&,user]{
+        for(int n=0;n<25;++n){CreateTaskRequest request{TaskType::REGRESSION,"user"+std::to_string(user),"123",0};
+            request.payload={{"spec_version",2},{"case","cases/example/run.tcl"},{"flow","route"},
+                {"timeout_seconds",uint64_t(60)},{"flow_config",{{"route_design",user%2},{"bit_cmp",1}}}};
+            if(!concurrentService.createTask(request))++failures;
+        }
+    });
+    for(auto& thread:threads)thread.join();CHECK(failures==0);
+    auto concurrentTasks=concurrentQueue.getTasks();CHECK(concurrentTasks.size()==100);unique.clear();
+    std::sort(concurrentTasks.begin(),concurrentTasks.end(),[](const Task& x,const Task& y){return x.getQueueSequence()<y.getQueueSequence();});
+    for(const auto& task:concurrentTasks){CHECK(unique.insert(task.getId()).second);
+        const int user=std::stoi(task.getTarget().substr(4));CHECK(task.getPayload()["flow_config"]["route_design"]==user%2);}
+    CHECK(concurrentWorkers.registerWorker("consumer","host",1));
+    for(const auto& expected:concurrentTasks){auto assigned=concurrentQueue.schedule();CHECK(assigned.size()==1);
+        CHECK(assigned.front().task_id==expected.getId());
+        CHECK(concurrentQueue.markTaskStarted(expected.getId(),"consumer"));
+        CHECK(concurrentQueue.completeTask(expected.getId(),TaskStatus::SUCCEEDED));}
 }); }

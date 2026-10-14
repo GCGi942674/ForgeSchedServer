@@ -7,7 +7,7 @@
 #include <cassert>
 #include <set>
 
-using namespace ForgeSched;
+using namespace GCRP;
 int main() {
     WorkerManager manager;
     Scheduler scheduler(manager);

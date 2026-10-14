@@ -9,7 +9,7 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 Acceptor::Acceptor(EventLoop *loop, int port, std::string bind_ip)
     : loop_(loop), port_(port), bind_ip_(std::move(bind_ip)), listen_fd_(-1) {}

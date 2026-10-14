@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_WORKER_SESSION_HANDLER_H
-#define FORGESCHED_WORKER_SESSION_HANDLER_H
+#ifndef GCRP_WORKER_SESSION_HANDLER_H
+#define GCRP_WORKER_SESSION_HANDLER_H
 
 #include "Message.h"
 #include "worker/WorkerManager.h"
@@ -12,7 +12,7 @@
 #include "EventLoop.h"
 #include <memory>
 
-namespace ForgeSched {
+namespace GCRP {
 
 class WorkerSessionHandler : public Message {
 public:
@@ -47,6 +47,6 @@ private:
     Protocol::ProtocolRouter& router_;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_WORKER_SESSION_HANDLER_H
+#endif // GCRP_WORKER_SESSION_HANDLER_H

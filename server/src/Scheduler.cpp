@@ -8,7 +8,7 @@
 #include <sstream>
 #include <limits>
 
-namespace ForgeSched {
+namespace GCRP {
 namespace {
 const std::string* batchId(const Task& task) {
     const auto& payload = task.getPayload();
@@ -667,4 +667,4 @@ bool Scheduler::rollbackAssignment(TaskId task_id) {
     return true;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

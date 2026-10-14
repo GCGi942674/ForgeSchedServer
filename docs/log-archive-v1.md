@@ -26,8 +26,8 @@ this first version; do not treat this archive as a forensic integrity proof.
 To inspect a completed task, get its `run_id` from `query TASK_ID`, then:
 
 ```sh
-./build/bin/forgesched_client logs TASK_ID --run-id RUN_ID
-./build/bin/forgesched_client log TASK_ID --run-id RUN_ID --name stdout.log --offset 0 --limit 8192
+./build/bin/gcrp_client logs TASK_ID --run-id RUN_ID
+./build/bin/gcrp_client log TASK_ID --run-id RUN_ID --name stdout.log --offset 0 --limit 8192
 ```
 
 `log` returns `data_hex` in a JSON response; decode hex for display. Use

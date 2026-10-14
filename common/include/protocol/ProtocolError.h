@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_PROTOCOL_ERROR_H
-#define FORGESCHED_PROTOCOL_ERROR_H
+#ifndef GCRP_PROTOCOL_ERROR_H
+#define GCRP_PROTOCOL_ERROR_H
 
 #include <string>
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 enum class ProtocolErrorCode {
     NONE,
@@ -22,6 +22,6 @@ struct ProtocolError {
     bool hasError() const { return code != ProtocolErrorCode::NONE; }
 };
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol
 
-#endif // FORGESCHED_PROTOCOL_ERROR_H
+#endif // GCRP_PROTOCOL_ERROR_H

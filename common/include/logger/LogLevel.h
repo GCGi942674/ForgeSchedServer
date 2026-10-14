@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_LOG_LEVEL_H
-#define FORGESCHED_LOG_LEVEL_H
+#ifndef GCRP_LOG_LEVEL_H
+#define GCRP_LOG_LEVEL_H
 
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 enum class LogLevel {
     DEBUG,
@@ -24,6 +24,6 @@ inline std::string toString(LogLevel level) {
     }
 }
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_LOG_LEVEL_H
+#endif // GCRP_LOG_LEVEL_H

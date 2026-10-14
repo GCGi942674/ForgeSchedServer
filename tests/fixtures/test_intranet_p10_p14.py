@@ -37,7 +37,7 @@ def stop_group(process):
 def main():
     binary = Path(sys.argv[1]).resolve()
     root = Path(sys.argv[2]).resolve()
-    with tempfile.TemporaryDirectory(prefix='forge-p10-p14-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='gcrp-p10-p14-') as temporary:
         base = Path(temporary)
         subprocess.run([sys.executable, '-B', str(root / 'tests/fixtures/pjtest/setup.py'),
                         str(base)], check=True, stdout=subprocess.DEVNULL)
@@ -100,9 +100,9 @@ def main():
         try:
             def start(config, args, log):
                 env = os.environ.copy()
-                env['FORGESCHED_CONFIG'] = str(config)
+                env['GCRP_CONFIG'] = str(config)
                 if config in worker_configs:
-                    env['FORGESCHED_MACHINE_NAME'] = config.stem
+                    env['GCRP_MACHINE_NAME'] = config.stem
                 with log.open('w') as stream:
                     process = subprocess.Popen([sys.executable, '-B', '-u',
                         str(root / 'tools/intranet_p10_p14.py')] + args,

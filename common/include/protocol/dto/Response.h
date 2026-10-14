@@ -1,10 +1,10 @@
-#ifndef FORGESCHED_RESPONSE_H
-#define FORGESCHED_RESPONSE_H
+#ifndef GCRP_RESPONSE_H
+#define GCRP_RESPONSE_H
 
 #include "nlohmann/json.hpp"
 #include <string>
 
-namespace ForgeSched::Protocol::DTO {
+namespace GCRP::Protocol::DTO {
 
 struct Response {
     int code{0};
@@ -15,6 +15,6 @@ struct Response {
 bool fromJson(const nlohmann::json& j, Response& out);
 nlohmann::json toJson(const Response& value);
 
-} // namespace ForgeSched::Protocol::DTO
+} // namespace GCRP::Protocol::DTO
 
-#endif // FORGESCHED_RESPONSE_H
+#endif // GCRP_RESPONSE_H

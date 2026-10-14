@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_PROTOCOL_CODEC_H
-#define FORGESCHED_PROTOCOL_CODEC_H
+#ifndef GCRP_PROTOCOL_CODEC_H
+#define GCRP_PROTOCOL_CODEC_H
 
 #include "ProtocolMessage.h"
 #include "ProtocolError.h"
@@ -8,7 +8,7 @@
 #include "task/TaskStatus.h"
 #include <string>
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 class ProtocolCodec {
 public:
@@ -34,6 +34,6 @@ private:
     static std::string messageTypeToString(MessageType type);
 };
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol
 
-#endif // FORGESCHED_PROTOCOL_CODEC_H
+#endif // GCRP_PROTOCOL_CODEC_H

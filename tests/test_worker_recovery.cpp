@@ -5,9 +5,9 @@
 #include <sqlite3.h>
 #include <unistd.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 int main() {
-    char directory[] = "/tmp/forge-recovery-XXXXXX";
+    char directory[] = "/tmp/gcrp-recovery-XXXXXX";
     assert(mkdtemp(directory));
     const std::string path = std::string(directory) + "/state.db";
     std::string first_run, second_run;

@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_STATE_STORE_H
-#define FORGESCHED_STATE_STORE_H
+#ifndef GCRP_STATE_STORE_H
+#define GCRP_STATE_STORE_H
 
 #include "task/Task.h"
 #include <optional>
@@ -9,7 +9,7 @@
 
 struct sqlite3;
 
-namespace ForgeSched {
+namespace GCRP {
 
 struct PersistedTask {
     Task task;
@@ -43,5 +43,5 @@ private:
     void exec(const char* sql) const;
 };
 
-} // namespace ForgeSched
+} // namespace GCRP
 #endif

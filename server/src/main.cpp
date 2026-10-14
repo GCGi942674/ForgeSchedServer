@@ -19,13 +19,13 @@ void handle_sigint(int) {
   (void)n;
 }
 
-ForgeSched::LogLevel parseLogLevel(const std::string& level_str) {
-    static const std::unordered_map<std::string, ForgeSched::LogLevel> level_map = {
-        {"DEBUG", ForgeSched::LogLevel::DEBUG},
-        {"INFO", ForgeSched::LogLevel::INFO},
-        {"WARN", ForgeSched::LogLevel::WARN},
-        {"ERROR", ForgeSched::LogLevel::ERROR},
-        {"FATAL", ForgeSched::LogLevel::FATAL}
+GCRP::LogLevel parseLogLevel(const std::string& level_str) {
+    static const std::unordered_map<std::string, GCRP::LogLevel> level_map = {
+        {"DEBUG", GCRP::LogLevel::DEBUG},
+        {"INFO", GCRP::LogLevel::INFO},
+        {"WARN", GCRP::LogLevel::WARN},
+        {"ERROR", GCRP::LogLevel::ERROR},
+        {"FATAL", GCRP::LogLevel::FATAL}
     };
 
     auto it = level_map.find(level_str);
@@ -33,38 +33,38 @@ ForgeSched::LogLevel parseLogLevel(const std::string& level_str) {
         return it->second;
     }
     std::cerr << "[CONFIG] Warning: Unknown log level '" << level_str << "'. Defaulting to INFO." << std::endl;
-    return ForgeSched::LogLevel::INFO;
+    return GCRP::LogLevel::INFO;
 }
 
 int main(int argc, char** argv) {
   // Step 1: Load Config
   if (argc > 2 || (argc == 2 && std::string(argv[1]) != "--help")) {
-    std::cerr << "Usage: forgesched_server [--help]\n";
+    std::cerr << "Usage: gcrp_server [--help]\n";
     return 1;
   }
   if (argc == 2) {
-    std::cout << "Set FORGESCHED_CONFIG to the shared config file path.\n";
+    std::cout << "Set GCRP_CONFIG to the shared config file path.\n";
     return 0;
   }
-  bool config_loaded = ForgeSched::Config::instance().loadDefault();
+  bool config_loaded = GCRP::Config::instance().loadDefault();
   if (!config_loaded) {
-      std::cerr << "[SERVER] Missing config; set FORGESCHED_CONFIG" << std::endl;
+      std::cerr << "[SERVER] Missing config; set GCRP_CONFIG" << std::endl;
       return 1;
   }
 
   // Step 2: Configure Logger
-  std::string log_level_str = ForgeSched::Config::instance().getString("log.level", "INFO");
-  std::string log_dir = ForgeSched::Config::instance().getString("log.dir", "");
+  std::string log_level_str = GCRP::Config::instance().getString("log.level", "INFO");
+  std::string log_dir = GCRP::Config::instance().getString("log.dir", "");
 
-  ForgeSched::LogLevel log_level = parseLogLevel(log_level_str);
-  ForgeSched::Logger::instance().setLogDirectory(log_dir);
-  ForgeSched::Logger::instance().setLevel(log_level);
+  GCRP::LogLevel log_level = parseLogLevel(log_level_str);
+  GCRP::Logger::instance().setLogDirectory(log_dir);
+  GCRP::Logger::instance().setLevel(log_level);
 
   // Step 3: Read server settings
-  int port = ForgeSched::Config::instance().getInt("server.port", 0);
-  int worker_threads = ForgeSched::Config::instance().getInt("server.worker_threads", 8);
-  int io_threads = ForgeSched::Config::instance().getInt("server.io_threads", 2);
-  const std::string bind_ip = ForgeSched::Config::instance().getString("server.bind_ip", "");
+  int port = GCRP::Config::instance().getInt("server.port", 0);
+  int worker_threads = GCRP::Config::instance().getInt("server.worker_threads", 8);
+  int io_threads = GCRP::Config::instance().getInt("server.io_threads", 2);
+  const std::string bind_ip = GCRP::Config::instance().getString("server.bind_ip", "");
   if (port < 1 || port > 65535 || worker_threads < 1 || worker_threads > 256 ||
       io_threads < 1 || io_threads > 256 || log_dir.empty() || bind_ip.empty()) {
     std::cerr << "[SERVER] Invalid port or thread count" << std::endl;
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
   std::cerr << "[SERVER] Configuration: port=" << port << ", workers=" << worker_threads
             << ", log_level=" << log_level_str << ", log_dir=" << log_dir << std::endl;
 
-  LOG_INFO(ForgeSched::LogModule::SERVER, "server starting...");
+  LOG_INFO(GCRP::LogModule::SERVER, "server starting...");
 
   g_signal_fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (g_signal_fd < 0) return 1;
@@ -88,9 +88,9 @@ int main(int argc, char** argv) {
 
   // Step 4: Start server with configured settings
   EchoHandler handler;
-  std::unique_ptr<ForgeSched::WorkerServer> worker_server;
+  std::unique_ptr<GCRP::WorkerServer> worker_server;
   try {
-    worker_server = std::make_unique<ForgeSched::WorkerServer>(true);
+    worker_server = std::make_unique<GCRP::WorkerServer>(true);
   } catch (const std::exception& error) {
     std::cerr << "[SERVER] State database unavailable: " << error.what() << std::endl;
     ::close(g_signal_fd);
@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
     g_signal_fd = -1;
   }
 
-  LOG_INFO(ForgeSched::LogModule::SERVER, "server stopped!");
+  LOG_INFO(GCRP::LogModule::SERVER, "server stopped!");
 
   return ran ? 0 : 1;
 }

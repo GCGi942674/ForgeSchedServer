@@ -54,7 +54,7 @@ def task(port, task_id):
 
 def main():
     server_bin, manager_script = sys.argv[1:3]
-    with tempfile.TemporaryDirectory(prefix='forge-p13-') as directory:
+    with tempfile.TemporaryDirectory(prefix='gcrp-p13-') as directory:
         root = Path(directory)
         probe = __import__('socket').socket()
         probe.bind(('127.0.0.1', 0))
@@ -88,9 +88,9 @@ def main():
         def start(args, config):
             output = (root / 'process-{}.log'.format(len(files))).open('wb')
             files.append(output)
-            environment = dict(os.environ, FORGESCHED_CONFIG=str(config))
+            environment = dict(os.environ, GCRP_CONFIG=str(config))
             if config in manager_confs.values():
-                environment['FORGESCHED_MACHINE_NAME'] = config.stem
+                environment['GCRP_MACHINE_NAME'] = config.stem
             process = subprocess.Popen(args, cwd=str(root),
                 env=environment,
                 stdout=output, stderr=subprocess.STDOUT)

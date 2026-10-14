@@ -1,10 +1,10 @@
 #include "ControlTestSupport.h"
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include "protocol/ConnectionRole.h"
 #include "task/TaskLimits.h"
 #include <set>
-using namespace ForgeSched;
-using namespace ForgeSched::Protocol;
+using namespace GCRP;
+using namespace GCRP::Protocol;
 int main() { return testMain([] {
     const MessageType types[] = {MessageType::SUBMIT_TASK, MessageType::QUERY_TASK,
         MessageType::CANCEL_TASK, MessageType::WORKER_REGISTER, MessageType::WORKER_HEARTBEAT,
@@ -16,7 +16,7 @@ int main() { return testMain([] {
         CHECK(isAllowed(ConnectionRole::UNKNOWN, types[i]) == (i <= 3));
     }
     ControlTestServer host;
-    ForgeClient api("127.0.0.1", host.port);
+    GcrpClient api("127.0.0.1", host.port);
     auto client = connectTo(host.port);
     auto malformed = MessageCodec::encode("{");
     sendBytes(client.value, malformed.data(), malformed.size());
@@ -124,7 +124,7 @@ int main() { return testMain([] {
     std::vector<std::thread> callers;
     for (size_t i = 0; i < ids.size(); ++i) callers.emplace_back([&, i] {
         try {
-            ForgeClient c("127.0.0.1", host.port);
+            GcrpClient c("127.0.0.1", host.port);
             auto result = c.submit("parallel", "r");
             CHECK(result.data["code"] == 0);
             ids[i] = result.data["result"]["task_id"].get<uint64_t>();

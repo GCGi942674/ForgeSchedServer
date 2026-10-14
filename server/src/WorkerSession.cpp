@@ -7,10 +7,10 @@
 #include "protocol/Message_codec.h"
 #include "Logging.h"
 
-using namespace ForgeSched::Protocol;
-using namespace ForgeSched::Protocol::DTO;
+using namespace GCRP::Protocol;
+using namespace GCRP::Protocol::DTO;
 
-namespace ForgeSched {
+namespace GCRP {
 
 WorkerSession::WorkerSession(EventLoop* loop, WorkerManager& worker_manager,
     WorkerConnectionRegistry& registry, ProtocolRouter& router, SchedulingDriver& scheduling_driver)
@@ -153,4 +153,4 @@ bool WorkerSession::validateWorkerIdentity(const ProtocolMessage& msg) {
         msg.data["worker_id"].get<std::string>() == *worker_id_;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

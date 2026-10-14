@@ -39,7 +39,7 @@ class Rig:
             'log.dir={}\ndatabase.path={}\nworker.output_dir={}\n'
             'worker.reconnect_seconds=0.1\nserver.recovery_max_retries=1\nserver.worker_timeout_seconds=2\n'.format(
                 self.port, root / 'logs', root / 'state.db', root / 'output'))
-        self.env = dict(os.environ, FORGESCHED_CONFIG=str(self.config))
+        self.env = dict(os.environ, GCRP_CONFIG=str(self.config))
 
     def spawn(self, argv):
         output = (self.root / ('process-{}.log'.format(len(self.logs)))).open('wb')
@@ -92,7 +92,7 @@ class Rig:
 
 
 def main():
-    with tempfile.TemporaryDirectory(prefix='forge-p12-') as directory:
+    with tempfile.TemporaryDirectory(prefix='gcrp-p12-') as directory:
         rig = Rig(Path(directory), *sys.argv[1:3])
         try:
             rig.start_server()

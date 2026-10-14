@@ -2,7 +2,7 @@
 
 P12 recovery remains per slot. The Server sees each slot as one Worker with
 `slots=1`, one TCP connection and one active execution journal. The Python slot
-manager starts an independent `forge_worker.py` process for each slot. Each
+manager starts an independent `gcrp_worker.py` process for each slot. Each
 has its own complete GalaxCore SVN checkout, output directory, identity lock,
 outbox, execution guard and cleanup receipts. The shared ZIP directory is
 read-only.

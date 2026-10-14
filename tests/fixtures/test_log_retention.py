@@ -21,7 +21,7 @@ def old_tree(root, task_id, old):
 
 
 def main():
-    with tempfile.TemporaryDirectory(prefix="forge-log-retention-") as temp:
+    with tempfile.TemporaryDirectory(prefix="gcrp-log-retention-") as temp:
         root = Path(temp)
         now = time.time()
         old = now - 31 * 86400

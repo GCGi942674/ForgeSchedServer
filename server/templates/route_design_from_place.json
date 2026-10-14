@@ -1,0 +1,27 @@
+{
+  "task_name": "route_design_from_place",
+  "priority": 0,
+  "max_retry": 0,
+  "max_time": 600,
+  "flow_config": {
+    "read_edif": 0,
+    "read_xdc": 0,
+    "report_timing_summary": 0,
+    "report_utilization": 0,
+    "opt_design": 0,
+    "place_design": 0,
+    "place_design_from_syn": 0,
+    "phys_opt_design": 0,
+    "route_design": 0,
+    "route_design_from_place": 1,
+    "write_checkpoint": 0,
+    "write_bitstream": 0,
+    "bit_cmp": 0,
+    "msk_cmp": 0,
+    "bgn_cmp": 0,
+    "dcp_cmp": 0,
+    "rpx_cmp": 0,
+    "shape_cmp": 0,
+    "checksum_cmp": 1
+  }
+}

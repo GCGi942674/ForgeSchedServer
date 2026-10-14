@@ -2,7 +2,7 @@
 #include "task/TaskStatus.h"
 #include "task/TaskType.h"
 
-namespace ForgeSched {
+namespace GCRP {
 
 std::string toString(TaskStatus status) {
     switch (status) {
@@ -112,4 +112,4 @@ bool Task::transitionTo(TaskStatus next) {
     return true;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

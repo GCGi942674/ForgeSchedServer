@@ -2,7 +2,7 @@
 #include "Logging.h"
 #include <shared_mutex>
 
-namespace ForgeSched {
+namespace GCRP {
 
 WorkerConnectionRegistry::WorkerConnectionRegistry() {
 }
@@ -118,4 +118,4 @@ WorkerConnectionRegistry::HandleId WorkerConnectionRegistry::getHandleId(
     return it->second.handle_id;
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

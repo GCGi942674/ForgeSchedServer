@@ -9,14 +9,14 @@ disconnect, or server restart.
 
 Use a dedicated Server database and a free TCP port. Do not run the original
 one-slot smoke scripts or another slot manager at the same time. Keep both
-machines on the same ForgeSched commit. Leave the existing slot checkout
+machines on the same GCRP commit. Leave the existing slot checkout
 intact; the second slot checks out its own complete GalaxCore SVN copy.
 
 On the Server, keep the previously successful `server.work_root`,
 `server.artifact_root`, `server.templates_dir`, IP, port and case. Set:
 
 ```ini
-database.path=./data/forgesched-dual-smoke.db
+database.path=./data/gcrp-dual-smoke.db
 smoke.revision=18954
 smoke.case=kintexuplus/xcku3p-ffvd900-1-i/convergentRoundingEven/run.tcl
 smoke.flow=route
@@ -51,7 +51,7 @@ and route flow template must be the same on both hosts. Before starting,
 confirm the Worker host has enough disk space for another complete checkout
 and enough CPU/memory for two concurrent real cases.
 
-From each ForgeSched root, start Server first, then Worker:
+From each GCRP root, start Server first, then Worker:
 
 ```bash
 python3 -B -u tools/intranet_dual_server_smoke.py

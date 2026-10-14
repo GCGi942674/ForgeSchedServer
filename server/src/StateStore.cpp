@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <limits>
 
-namespace ForgeSched {
+namespace GCRP {
 namespace {
 void check(int code, sqlite3* db) {
     if (code != SQLITE_OK && code != SQLITE_DONE && code != SQLITE_ROW)
@@ -102,7 +102,7 @@ StateStore::StateStore(const std::string& path, int busy_timeout_ms) {
             schema_version = sqlite3_column_int(version.value, 0);
         }
         if (schema_version < 0 || schema_version > 2)
-            throw std::runtime_error("unsupported ForgeSched database schema version");
+            throw std::runtime_error("unsupported GCRP database schema version");
         exec("BEGIN IMMEDIATE");
         try {
             exec("CREATE TABLE IF NOT EXISTS batches (batch_id TEXT PRIMARY KEY, stop_requested INTEGER NOT NULL DEFAULT 0 CHECK(stop_requested IN (0,1)))");
@@ -288,4 +288,4 @@ void StateStore::save(const std::vector<Task>& tasks,
         exec("COMMIT");
     } catch (...) { exec("ROLLBACK"); throw; }
 }
-} // namespace ForgeSched
+} // namespace GCRP

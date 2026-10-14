@@ -3,20 +3,21 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest import mock
 
 import yaml
 
 MODULE = Path(__file__).resolve().parents[2] / "server/clock.py"
-spec = importlib.util.spec_from_file_location("forge_clock", str(MODULE))
+spec = importlib.util.spec_from_file_location("gcrp_clock", str(MODULE))
 clock = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(clock)
 
 
 class ClockTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="forge-clock-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="gcrp-clock-")
         self.root = Path(self.temporary.name)
         self.work = self.root / "test2"
         case = self.work / "cases/smoke/run.tcl"
@@ -53,6 +54,25 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(len(plan), 1)
         self.assertEqual(plan[0]["payload"]["case"], "cases/smoke/run.tcl")
         self.assertEqual(plan[0]["payload"]["flow_config"]["route_design"], 1)
+        context = plan[0]["payload"]["context"]
+        self.assertEqual(context["source"], "scheduled")
+        self.assertEqual(context["date"], clock.date.today().isoformat())
+        self.assertEqual(context["template"], "route")
+        # The unmodified execution layer can consume the newly tagged plan.
+        sys.path.insert(0, str(MODULE.parents[1] / "worker"))
+        from pjtest_adapter import PJtestAdapter, AdapterError
+        adapter = PJtestAdapter.__new__(PJtestAdapter)
+        adapter.work_root = self.work.resolve()
+        adapter.profiles = {}
+        adapter.galaxcore_root = None
+        adapter.require_server_flow = True
+        task = dict(plan[0], task_id=1)
+        case, settings = adapter.validate(task)
+        self.assertEqual(case.name, "run.tcl")
+        self.assertEqual(settings, plan[0]["payload"]["flow_config"])
+        task["payload"]["context"]["extra"] = "unsupported"
+        with self.assertRaises(AdapterError):
+            adapter.validate(task)
         self.assertEqual(plan[0]["payload"]["context"]["suite"], "daily_regression")
 
     def test_missing_template_blocks_whole_suite(self):

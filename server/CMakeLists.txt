@@ -1,6 +1,6 @@
 # server/CMakeLists.txt
 
-add_library(forgesched_server_core STATIC
+add_library(gcrp_server_core STATIC
     src/Connection.cpp
     src/ConnectionSession.cpp
     src/EchoServer.cpp
@@ -29,16 +29,16 @@ add_library(forgesched_server_core STATIC
     src/WorkerSessionHandler.cpp
 )
 
-target_include_directories(forgesched_server_core
+target_include_directories(gcrp_server_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 find_package(SQLite3 REQUIRED)
-target_link_libraries(forgesched_server_core
+target_link_libraries(gcrp_server_core
     PUBLIC
         common
         SQLite::SQLite3
 )
-add_executable(server src/main.cpp)
-target_link_libraries(server PRIVATE forgesched_server_core)
+add_executable(gcrp_server src/main.cpp)
+target_link_libraries(gcrp_server PRIVATE gcrp_server_core)

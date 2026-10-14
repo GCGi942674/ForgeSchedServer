@@ -6,17 +6,17 @@
 `docs/pjtest-adapter.md`。
 
 ```bash
-python3 worker/forge_worker.py --worker-id demo-1 --demo
-build/bin/forgesched_client submit --target demo --revision r1
-build/bin/forgesched_client query TASK_ID
+python3 worker/gcrp_worker.py --worker-id demo-1 --demo
+build/bin/gcrp_client submit --target demo --revision r1
+build/bin/gcrp_client query TASK_ID
 ```
 
 默认子进程输出两行日志，等待 3 秒并返回 0。Worker 本地参数
 `--demo-seconds`、`--demo-exit-code`、`--task-timeout`
 用于验证成功、失败和超时。服务端 target/revision 不作为命令执行。
 
-Worker 从 `config/forgesched.conf` 读取连接地址、端口和输出目录；
-可用 `FORGESCHED_CONFIG` 指定部署配置，或通过显式参数临时覆盖。
+Worker 从 `config/gcrp.conf` 读取连接地址、端口和输出目录；
+可用 `GCRP_CONFIG` 指定部署配置，或通过显式参数临时覆盖。
 每次 Worker 启动创建独立 run-* 目录，每个任务保存 pid、stdout.log、
 stderr.log、result.json。Server 查询提供任务状态和受限的执行摘要，
 完整日志和结果文件仍留在 Worker 本地。

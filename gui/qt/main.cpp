@@ -9,14 +9,14 @@
 
 namespace {
 QString findConfig() {
-    const auto explicitPath=QString::fromLocal8Bit(qgetenv("FORGESCHED_CONFIG"));
-    if(qEnvironmentVariableIsSet("FORGESCHED_CONFIG"))return explicitPath;
+    const auto explicitPath=QString::fromLocal8Bit(qgetenv("GCRP_CONFIG"));
+    if(qEnvironmentVariableIsSet("GCRP_CONFIG"))return explicitPath;
     for(const auto& base:{QDir::currentPath(),QCoreApplication::applicationDirPath()}){
-        QDir directory(base);for(int i=0;i<8;++i){auto path=directory.filePath("config/forgesched.conf");if(QFile::exists(path))return path;if(!directory.cdUp())break;}
+        QDir directory(base);for(int i=0;i<8;++i){auto path=directory.filePath("config/gcrp.conf");if(QFile::exists(path))return path;if(!directory.cdUp())break;}
     }return {};
 }
 GuiSettings settings(const QString& path) {
-    QFile file(path);if(path.isEmpty()||!file.open(QIODevice::ReadOnly))throw std::runtime_error("cannot read config/forgesched.conf; use --config");
+    QFile file(path);if(path.isEmpty()||!file.open(QIODevice::ReadOnly))throw std::runtime_error("cannot read config/gcrp.conf; use --config");
     QTextStream stream(&file);stream.setCodec("UTF-8");QMap<QString,QString> values;
     while(!stream.atEnd()){auto line=stream.readLine().trimmed();if(line.isEmpty()||line.startsWith('#'))continue;auto at=line.indexOf('=');if(at<1)throw std::runtime_error("malformed config line");values[line.left(at).trimmed()]=line.mid(at+1).trimmed();}
     auto integer=[&values](const QString& key,int fallback,int low,int high){bool ok=false;int value=values.contains(key)?values[key].toInt(&ok):fallback;if(!values.contains(key))ok=true;if(!ok||value<low||value>high)throw std::runtime_error(("invalid "+key).toStdString());return value;};
@@ -28,8 +28,8 @@ GuiSettings settings(const QString& path) {
 }
 int main(int argc,char** argv) {
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-    QApplication app(argc,argv);app.setApplicationName("ForgeSchedGui");app.setApplicationVersion("0.1");
-    QCommandLineParser parser;parser.setApplicationDescription(QStringLiteral("ForgeSched C++ / Qt5 调度控制台"));
+    QApplication app(argc,argv);app.setApplicationName("GCRPGui");app.setApplicationVersion("0.1");
+    QCommandLineParser parser;parser.setApplicationDescription(QStringLiteral("GCRP C++ / Qt5 调度控制台"));
     parser.addHelpOption();parser.addVersionOption();
     parser.addOption({"demo",QStringLiteral("离线演示，不连接 Server")});
     parser.addOption({"self-test",QStringLiteral("自动检查窗口与目录树（需 --demo）")});

@@ -7,12 +7,12 @@
 基线 2411a88 已提交并推送。通用进程 Worker 不等于 PJtest Worker。
 本轮根据 reference/PJTest/worker/worker_core/main.py 做静态审查；没有真实 PJtest 工作目录、
 case、版本包或工具环境，因此未执行真实业务，也未宣称 Adapter 网络闭环完成。
-该参考文件保持原样，不纳入 ForgeSched 提交。不要直接运行它：默认会联系旧内网 HTTP
+该参考文件保持原样，不纳入 GCRP 提交。不要直接运行它：默认会联系旧内网 HTTP
 调度器，准备 SVN slot、安装版本、清理工作目录，并非无副作用的演示脚本。
 
 ## 已核对的执行链
 
-worker_loop 使用 HTTP 注册/心跳/pull/report，不兼容 ForgeSched framed TCP。
+worker_loop 使用 HTTP 注册/心跳/pull/report，不兼容 GCRP framed TCP。
 run_one_task 并非纯执行接口，它混合以下操作：
 
 1. 获取与 run.sh 共用的 slot 锁。
@@ -59,7 +59,7 @@ PJtestAdapter.validate(spec, local_config) 验证参数与本地依赖，不执�
 prepare() 在持有 slot 锁后完成版本和 flow 准备；执行失败不得继续跑旧版本。
 build_command() 返回本地受控 argv/cwd/env；使用现有 run.sh，不重写 vivado_runner。
 execute() 与 TCP 心跳解耦，但仍保持单 slot；先收到 TASK_START ACK 再执行。
-collect_result() 返回结构化结果，由 ForgeSched Worker 唯一负责 TCP 上报。
+collect_result() 返回结构化结果，由 GCRP Worker 唯一负责 TCP 上报。
 
 应从参考文件提取执行逻辑，不复制 HTTP 注册/pull/report、pending HTTP reports、
 tmux 多 slot 管理。已有的锁、安装、配置、结果分类是复用候选；
@@ -80,7 +80,7 @@ find_result_env 在精确路径和 RUN_TCL 匹配失败后，选择最新结果�
 classify_result 的优先级是外层超时、case PASS/TIMEOUT/FAIL、缺失结果失败。
 PASS 可以覆盖非零工具退出码，这是原业务的 artifact-authoritative 语义，不宜擅改。
 需要同时保存 raw_exit_code、归一化 exit_code、case_status、reason。
-exit 0 但缺少本次结果不得报 SUCCEEDED。TIMEOUT 映射 ForgeSched TIMEOUT。
+exit 0 但缺少本次结果不得报 SUCCEEDED。TIMEOUT 映射 GCRP TIMEOUT。
 当前 C++ Router 不保存 TASK_RESULT.message，未来需受限的结构化 result 才能
 在 CLI 查询里看到业务细节；仅把详情塞 message 不能算实现了结果查询。
 

@@ -1,4 +1,4 @@
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include "protocol/ConnectionRole.h"
 #include "protocol/ProtocolCodec.h"
 #include "protocol/Message_codec.h"
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace ForgeSched {
+namespace GCRP {
 namespace {
 using Clock = std::chrono::steady_clock;
 struct Socket {
@@ -48,7 +48,7 @@ void transfer(int fd, char* data, size_t size, bool sending, Clock::time_point d
     }
 }
 }
-ForgeClient::ForgeClient(std::string host, uint16_t port, int timeout_ms)
+GcrpClient::GcrpClient(std::string host, uint16_t port, int timeout_ms)
     : host_(std::move(host)), port_(port), timeout_ms_(timeout_ms) {
     in_addr parsed{};
     if (::inet_pton(AF_INET, host_.c_str(), &parsed) != 1)
@@ -56,7 +56,7 @@ ForgeClient::ForgeClient(std::string host, uint16_t port, int timeout_ms)
     if (!port_ || timeout_ms_ < 1 || timeout_ms_ > 60000)
         throw std::invalid_argument("invalid port or timeout (1..60000 ms)");
 }
-Protocol::ProtocolMessage ForgeClient::request(Protocol::MessageType type, const nlohmann::json& data) {
+Protocol::ProtocolMessage GcrpClient::request(Protocol::MessageType type, const nlohmann::json& data) {
     using namespace Protocol;
     if (!isClientRequest(type) || !data.is_object())
         throw std::invalid_argument("not a client request");
@@ -97,29 +97,29 @@ Protocol::ProtocolMessage ForgeClient::request(Protocol::MessageType type, const
         throw std::runtime_error("invalid response payload");
     return response;
 }
-Protocol::ProtocolMessage ForgeClient::submit(const std::string& target, const std::string& revision, int priority) {
+Protocol::ProtocolMessage GcrpClient::submit(const std::string& target, const std::string& revision, int priority) {
     return request(Protocol::MessageType::SUBMIT_TASK,
         {{"task_type", "REGRESSION"}, {"target", target}, {"revision", revision}, {"priority", priority}});
 }
-Protocol::ProtocolMessage ForgeClient::query(uint64_t id) {
+Protocol::ProtocolMessage GcrpClient::query(uint64_t id) {
     return request(Protocol::MessageType::QUERY_TASK, {{"task_id", id}});
 }
-Protocol::ProtocolMessage ForgeClient::cancel(uint64_t id) {
+Protocol::ProtocolMessage GcrpClient::cancel(uint64_t id) {
     return request(Protocol::MessageType::CANCEL_TASK, {{"task_id", id}});
 }
-Protocol::ProtocolMessage ForgeClient::queryBatch(const std::string& id) {
+Protocol::ProtocolMessage GcrpClient::queryBatch(const std::string& id) {
     return request(Protocol::MessageType::QUERY_BATCH, {{"batch_id", id}});
 }
-Protocol::ProtocolMessage ForgeClient::cancelBatch(const std::string& id) {
+Protocol::ProtocolMessage GcrpClient::cancelBatch(const std::string& id) {
     return request(Protocol::MessageType::CANCEL_BATCH, {{"batch_id", id}});
 }
-Protocol::ProtocolMessage ForgeClient::queryRegression(const nlohmann::json& filter) {
+Protocol::ProtocolMessage GcrpClient::queryRegression(const nlohmann::json& filter) {
     return request(Protocol::MessageType::QUERY_REGRESSION, filter);
 }
-Protocol::ProtocolMessage ForgeClient::queryProgress(const nlohmann::json& filter) {
+Protocol::ProtocolMessage GcrpClient::queryProgress(const nlohmann::json& filter) {
     return request(Protocol::MessageType::QUERY_PROGRESS, filter);
 }
-Protocol::ProtocolMessage ForgeClient::queryRollback(const nlohmann::json& filter) {
+Protocol::ProtocolMessage GcrpClient::queryRollback(const nlohmann::json& filter) {
     return request(Protocol::MessageType::QUERY_ROLLBACK, filter);
 }
-} // namespace ForgeSched
+} // namespace GCRP

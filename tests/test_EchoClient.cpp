@@ -27,7 +27,7 @@ static bool waitServerReady(int port) {
 }
 
 int main() {
-  ForgeSched::Logger::instance().setLevel(ForgeSched::LogLevel::WARN);
+  GCRP::Logger::instance().setLevel(GCRP::LogLevel::WARN);
 
   const int port = 18081;
   int signal_fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);

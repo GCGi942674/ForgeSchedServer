@@ -8,13 +8,14 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace ForgeSched {
+namespace GCRP {
 
 struct RegressionQuery {
     std::string revision;
     std::string case_path;
     std::string flow;
     std::string batch_id;
+    std::string date, baseline_date, template_name, search, change, after_key;
     size_t limit{20};
     TaskId before_task_id{0};
 
@@ -30,6 +31,7 @@ public:
         : scheduler_(scheduler), cache_enabled_(cache_enabled),
           max_entries_(max_entries), ttl_seconds_(ttl_seconds) {}
     nlohmann::json query(const RegressionQuery& filter) const;
+    nlohmann::json compareDaily(const RegressionQuery& filter) const;
     nlohmann::json cacheStats() const;
 
 private:
@@ -47,4 +49,4 @@ private:
     mutable uint64_t hits_{0}, misses_{0}, invalidations_{0};
 };
 
-} // namespace ForgeSched
+} // namespace GCRP

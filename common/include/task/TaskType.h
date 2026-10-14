@@ -1,9 +1,9 @@
-#ifndef FORGESCHED_TASK_TYPE_H
-#define FORGESCHED_TASK_TYPE_H
+#ifndef GCRP_TASK_TYPE_H
+#define GCRP_TASK_TYPE_H
 
 #include <string>
 
-namespace ForgeSched {
+namespace GCRP {
 
 enum class TaskType {
     REGRESSION,
@@ -12,6 +12,6 @@ enum class TaskType {
 
 std::string toString(TaskType type);
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-#endif // FORGESCHED_TASK_TYPE_H
+#endif // GCRP_TASK_TYPE_H

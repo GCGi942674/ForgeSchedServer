@@ -1,7 +1,7 @@
 #include "TestSupport.h"
 #include "WorkerServer.h"
 #include <sys/eventfd.h>
-using namespace ForgeSched;
+using namespace GCRP;
 
 // Real framed TCP messages: no manual driver/coordinator calls.
 int main() { return testMain([] {

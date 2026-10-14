@@ -7,7 +7,7 @@
 #include "logger/LogModule.h"
 #include <unordered_map>
 
-namespace ForgeSched::Protocol::DTO {
+namespace GCRP::Protocol::DTO {
 
 static TaskType taskTypeFromString(const std::string& str) {
     static const std::unordered_map<std::string, TaskType> map = {
@@ -272,4 +272,4 @@ nlohmann::json toJson(const TaskAssignRequest& value) {
     return j;
 }
 
-} // namespace ForgeSched::Protocol::DTO
+} // namespace GCRP::Protocol::DTO

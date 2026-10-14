@@ -1,5 +1,5 @@
 #include "ControlTestSupport.h"
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include <filesystem>
 #include <fstream>
 #include <spawn.h>
@@ -12,7 +12,7 @@ struct Process {
 };
 int main(int argc, char** argv) { return testMain([&] {
     CHECK(argc == 3);
-    char path[] = "/tmp/forge-worker-test-XXXXXX"; CHECK(::mkdtemp(path));
+    char path[] = "/tmp/gcrp-worker-test-XXXXXX"; CHECK(::mkdtemp(path));
     struct Cleanup { const char* p; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(p, ec); } } cleanup{path};
     for (int mode = 0; mode < 5; ++mode) {
         ControlTestServer server;
@@ -27,7 +27,7 @@ int main(int argc, char** argv) { return testMain([&] {
         raw.push_back(nullptr);
         Process child;
         CHECK(::posix_spawn(&child.pid, argv[1], nullptr, nullptr, raw.data(), environ) == 0);
-        ForgeSched::ForgeClient client("127.0.0.1", server.port);
+        GCRP::GcrpClient client("127.0.0.1", server.port);
         if (mode >= 3) {
             CHECK(client.submit("shutdown", "r").data["code"] == 0);
             int processId = 0;

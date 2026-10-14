@@ -57,7 +57,7 @@ def preflight(config):
         raise ValueError('invalid flow_config in template')
     binary = path_from(config, 'tools.server_binary')
     if not binary.is_file() or not os.access(str(binary), os.X_OK):
-        raise ValueError('build/bin/server is missing or not executable')
+        raise ValueError('build/bin/gcrp_server is missing or not executable')
     return dict(revision=revision, case=case, flow=flow, target=target,
                 flow_config=flow_config, archive=archive.name, binary=str(binary),
                 run_count=number(config, 'smoke.run_count', 2, 1, 3))

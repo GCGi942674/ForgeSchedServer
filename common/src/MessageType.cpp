@@ -1,7 +1,7 @@
 #include "protocol/MessageType.h"
 #include <unordered_map>
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 std::string toString(MessageType type) {
     switch (type) {
@@ -66,4 +66,4 @@ MessageType messageTypeFromString(const std::string& value) {
     return MessageType::UNKNOWN;
 }
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol

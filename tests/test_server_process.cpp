@@ -1,5 +1,5 @@
 #include "TestSupport.h"
-#include "ForgeClient.h"
+#include "GcrpClient.h"
 #include <filesystem>
 #include <fstream>
 #include <sys/wait.h>
@@ -15,11 +15,11 @@ struct Child {
 };
 int main(int argc, char** argv) { return testMain([&] {
     CHECK(argc == 2); auto executable = std::filesystem::absolute(argv[1]).string();
-    char path[] = "/tmp/forgesched-process-XXXXXX"; CHECK(::mkdtemp(path));
+    char path[] = "/tmp/gcrp-process-XXXXXX"; CHECK(::mkdtemp(path));
     struct Cleanup { const char* path; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); } } cleanup{path};
     std::filesystem::create_directory(std::string(path)+"/config");
     auto configure = [&](int port) {
-        std::ofstream out(std::string(path)+"/config/forgesched.conf"); CHECK(out.good());
+        std::ofstream out(std::string(path)+"/config/gcrp.conf"); CHECK(out.good());
         out << "server.bind_ip=127.0.0.1\nserver.port=" << port
             << "\nserver.io_threads=2\nserver.worker_threads=2\nlog.level=WARN\nlog.dir=./logs\n"
             << "database.path=" << path << "/state.db\n";
@@ -36,7 +36,7 @@ int main(int argc, char** argv) { return testMain([&] {
         int port = freePort(); configure(port); Child child; launch(child);
         auto conn = connectTo(port);
         response(conn.value, envelope("worker_register", {{"worker_id", "process"}, {"hostname", "h"}, {"slots", 1u}}), true);
-        ForgeSched::ForgeClient client("127.0.0.1", port);
+        GCRP::GcrpClient client("127.0.0.1", port);
         if (previous_id)
             CHECK(client.query(previous_id).data["result"]["status"] == "SUCCEEDED");
         auto submitted = client.submit("process-control", "r");

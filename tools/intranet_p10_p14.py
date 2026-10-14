@@ -121,7 +121,7 @@ class WorkerAgent:
         self.machine = identity['name']
         self.uid = identity['uid']
         hostname = socket.gethostname().split('.')[0]
-        override = os.environ.get('FORGESCHED_MACHINE_NAME')
+        override = os.environ.get('GCRP_MACHINE_NAME')
         require(self.machine == hostname or override == self.machine,
                 'saved machine identity {} differs from hostname {}; check copied '
                 '.machine-identity.json before running'.format(self.machine, hostname))
@@ -150,7 +150,7 @@ class WorkerAgent:
             require(self.config['worker.slots'] == '1', 'initial Worker count must be 1')
             save_config(self.config_path, self.config)
             self.log = (self.report_file.parent / 'manager-console.log').open('ab')
-            env = dict(os.environ, FORGESCHED_CONFIG=str(self.config_path))
+            env = dict(os.environ, GCRP_CONFIG=str(self.config_path))
             self.manager = subprocess.Popen([sys.executable, '-B', '-u',
                 str(ROOT / 'worker' / 'slot_manager.py')], cwd=str(ROOT), env=env,
                 stdout=self.log, stderr=subprocess.STDOUT, close_fds=True)
@@ -262,7 +262,7 @@ class ServerHarness:
                 'Server already running')
         save_config(self.config_path, self.config)
         self.log = self.log_path.open('ab')
-        env = dict(os.environ, FORGESCHED_CONFIG=str(self.config_path))
+        env = dict(os.environ, GCRP_CONFIG=str(self.config_path))
         self.process = subprocess.Popen([self.binary], cwd=str(ROOT), env=env,
                                         stdout=self.log, stderr=subprocess.STDOUT,
                                         close_fds=True)

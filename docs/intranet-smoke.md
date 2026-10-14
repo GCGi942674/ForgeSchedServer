@@ -3,10 +3,10 @@
 This test runs **one Server, one Worker machine, one slot, one real PJTest
 `run.tcl` twice**. It does not use `--demo`, start a shell command from a Task,
 delete a slot checkout, or cancel a running case. It is intentionally smaller
-than a multi-slot acceptance test. Both machines need the same ForgeSched code
-and their own `config/forgesched.conf`; Python 3.6.8 is supported.
+than a multi-slot acceptance test. Both machines need the same GCRP code
+and their own `config/gcrp.conf`; Python 3.6.8 is supported.
 
-Configure the Server's `config/forgesched.conf`:
+Configure the Server's `config/gcrp.conf`:
 
 ```ini
 server.bind_ip=<Server LAN IP>
@@ -31,7 +31,7 @@ the case and ZIP exist before submitting anything. Use a free port and a
 dedicated `database.path` for this run. The script refuses to submit if the
 Server already has unfinished Tasks.
 
-Configure the Worker machine's `config/forgesched.conf`:
+Configure the Worker machine's `config/gcrp.conf`:
 
 ```ini
 network.server_ip=<same Server LAN IP>
@@ -52,7 +52,7 @@ slot is missing. An existing partial checkout is not deleted or repaired by
 this test. `worker.svn_revision` is the checkout revision; it need not match
 the ZIP build revision in `smoke.revision`.
 
-From the ForgeSched root, start these two commands in separate terminals,
+From the GCRP root, start these two commands in separate terminals,
 Server first and Worker second:
 
 ```bash
@@ -66,8 +66,8 @@ stops. Each command exits 0 only when its own checks pass. The two JSON files
 to copy back are:
 
 ```text
-<Server ForgeSched>/intranet-report/server-report.json
-<Worker ForgeSched>/intranet-report/worker-report.json
+<Server GCRP>/intranet-report/server-report.json
+<Worker GCRP>/intranet-report/worker-report.json
 ```
 
 They contain configuration identifiers, Task IDs, status transitions, case

@@ -1,6 +1,6 @@
 # P9–P14 intranet acceptance checklist
 
-Use the same ForgeSched revision on the Server and Worker hosts. Keep the
+Use the same GCRP revision on the Server and Worker hosts. Keep the
 known-good case, flow template and ZIP revision. Give smoke runs a dedicated
 Server database and port; do not run two Server launchers at once. These tests
 may start real GalaxCore cases and can take as long as their configured case
@@ -86,7 +86,7 @@ finished, unless the specific check intentionally observes a disposable case:
    copies and slots 4–5 have complete new copies. Shrink only after cases
    finish. The Worker audit records the expected names and checkout state.
 5. P14: With the real Server running, query the smoke revision/case through
-   `forgesched_client regression`; compare outcomes and task IDs with the
+   `gcrp_client regression`; compare outcomes and task IDs with the
    Server smoke report. Check pagination when there are more than 50 matching
    tasks. The audit performs the first-page comparison when possible.
 

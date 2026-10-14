@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15.2)
 
-project(ForgeSched LANGUAGES CXX)
+project(GalaxCoreRegressionPlatform LANGUAGES CXX)
 
 # =====================
 # C++ 标准
@@ -40,9 +40,9 @@ endif()
 add_subdirectory(common)
 add_subdirectory(server)
 add_subdirectory(client)
-option(FORGESCHED_BUILD_QT_GUI "Build the optional Qt5 desktop GUI" OFF)
+option(GCRP_BUILD_QT_GUI "Build the optional Qt5 desktop GUI" OFF)
 include(CTest)
-if(FORGESCHED_BUILD_QT_GUI)
+if(GCRP_BUILD_QT_GUI)
   add_subdirectory(gui/qt)
 endif()
 if(BUILD_TESTING)

@@ -61,12 +61,12 @@ def stop(process):
 
 def main():
     server_bin, worker_script = sys.argv[1:3]
-    with tempfile.TemporaryDirectory(prefix="forgesched-sqlite-worker-") as root:
+    with tempfile.TemporaryDirectory(prefix="gcrp-sqlite-worker-") as root:
         root = Path(root)
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
-        config = root / "forgesched.conf"
+        config = root / "gcrp.conf"
         config.write_text("server.bind_ip=127.0.0.1\nserver.port={}\n"
                           "server.io_threads=2\nserver.worker_threads=2\n"
                           "network.server_ip=127.0.0.1\nlog.level=WARN\n"
@@ -75,7 +75,7 @@ def main():
                               port, root / "logs", root / "state.db", root / "output", root / "archive"),
                           encoding="utf-8")
         env = os.environ.copy()
-        env["FORGESCHED_CONFIG"] = str(config)
+        env["GCRP_CONFIG"] = str(config)
         server = None
         worker = None
         try:

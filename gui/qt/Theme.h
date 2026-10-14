@@ -9,7 +9,7 @@
 #include <QStackedWidget>
 #include <QLabel>
 
-namespace ForgeUi {
+namespace GcrpUi {
 inline QString styleSheet() {
     return QStringLiteral(R"QSS(
 QWidget { font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 13px; color: #26354b; }

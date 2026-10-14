@@ -8,12 +8,12 @@
 #include "worker/WorkerDispatcher.h"
 #include <filesystem>
 #include <fstream>
-using namespace ForgeSched;
+using namespace GCRP;
 struct FlowDispatcher : WorkerDispatcher {
     bool dispatch(const WorkerId&, const Task&) override { return false; }
 };
 int main() { return testMain([] {
-    char name[] = "/tmp/forge-flow-XXXXXX";
+    char name[] = "/tmp/gcrp-flow-XXXXXX";
     CHECK(::mkdtemp(name));
     const std::filesystem::path root(name), templates = root / "templates";
     struct Remove {

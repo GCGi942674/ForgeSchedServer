@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 
-namespace ForgeSched {
+namespace GCRP {
 
 Config& Config::instance() {
     static Config instance;
@@ -17,13 +17,13 @@ Config& Config::instance() {
 }
 
 bool Config::loadDefault() {
-    if (const char* path = std::getenv("FORGESCHED_CONFIG"))
+    if (const char* path = std::getenv("GCRP_CONFIG"))
         return *path && load(path);
     std::error_code error;
     auto directory = std::filesystem::current_path(error);
     if (error) return false;
     while (true) {
-        const auto candidate = directory / "config" / "forgesched.conf";
+        const auto candidate = directory / "config" / "gcrp.conf";
         if (std::filesystem::is_regular_file(candidate, error))
             return load(candidate.string());
         if (directory == directory.root_path()) break;
@@ -142,4 +142,4 @@ std::string Config::trim(const std::string& str) const {
     return str.substr(start, end - start + 1);
 }
 
-} // namespace ForgeSched
+} // namespace GCRP

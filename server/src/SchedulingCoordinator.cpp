@@ -1,7 +1,7 @@
 #include "scheduler/SchedulingCoordinator.h"
 #include "Logging.h"
 
-namespace ForgeSched {
+namespace GCRP {
 SchedulingCoordinator::SchedulingCoordinator(Scheduler& scheduler, WorkerDispatcher& dispatcher)
     : scheduler_(scheduler), dispatcher_(dispatcher) {}
 
@@ -35,4 +35,4 @@ SchedulingResult SchedulingCoordinator::runOnce() {
     }
     return result;
 }
-} // namespace ForgeSched
+} // namespace GCRP

@@ -1,12 +1,12 @@
-#ifndef FORGESCHED_WORKER_DTO_H
-#define FORGESCHED_WORKER_DTO_H
+#ifndef GCRP_WORKER_DTO_H
+#define GCRP_WORKER_DTO_H
 
 #include "../ProtocolError.h"
 #include "nlohmann/json.hpp"
 #include <string>
 #include <cstdint>
 
-namespace ForgeSched::Protocol::DTO {
+namespace GCRP::Protocol::DTO {
 
 struct WorkerRegisterRequest {
     std::string worker_id;
@@ -28,6 +28,6 @@ nlohmann::json toJson(const WorkerRegisterRequest& value);
 bool fromJson(const nlohmann::json& j, WorkerHeartbeatRequest& out);
 nlohmann::json toJson(const WorkerHeartbeatRequest& value);
 
-} // namespace ForgeSched::Protocol::DTO
+} // namespace GCRP::Protocol::DTO
 
-#endif // FORGESCHED_WORKER_DTO_H
+#endif // GCRP_WORKER_DTO_H

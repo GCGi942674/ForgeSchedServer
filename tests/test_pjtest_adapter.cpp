@@ -29,7 +29,7 @@ nlohmann::json invoke(const std::vector<std::string>& args, int expected = 0) {
 }
 int main(int argc, char** argv) { return testMain([&] {
     CHECK(argc == 5);
-    char path[] = "/tmp/forgesched-pjtest-XXXXXX"; CHECK(::mkdtemp(path));
+    char path[] = "/tmp/gcrp-pjtest-XXXXXX"; CHECK(::mkdtemp(path));
     struct Cleanup { const char* path; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); } } cleanup{path};
     invoke({argv[1], argv[4], path}); // fixture prints JSON below
     { const auto settings = std::filesystem::path(path) / "worker.json";
@@ -43,7 +43,7 @@ int main(int argc, char** argv) { return testMain([&] {
       file << R"({"flow_config":{"original":1,"route_design":1}})"; }
     { std::ofstream file(std::filesystem::path(path) / "server.conf");
       file << "server.templates_dir=" << templates.string() << "\n"; }
-    CHECK(ForgeSched::Config::instance().load(std::string(path) + "/server.conf"));
+    CHECK(GCRP::Config::instance().load(std::string(path) + "/server.conf"));
     ControlTestServer host;
     auto client = connectTo(host.port);
     // Child CLI/Worker processes must use the fixture, not the deployment config.
@@ -52,7 +52,7 @@ int main(int argc, char** argv) { return testMain([&] {
       file << "network.server_ip=127.0.0.1\nserver.port=" << host.port << "\n";
       file << "network.timeout_ms=5000\n";
     }
-    CHECK(::setenv("FORGESCHED_CONFIG", runtime_config.c_str(), 1) == 0);
+    CHECK(::setenv("GCRP_CONFIG", runtime_config.c_str(), 1) == 0);
     const auto tasks_before = host.worker.getScheduler().getTasks().size();
     for (const auto& payload : {
             nlohmann::json{{"spec_version", 1}, {"case", "../escape/run.tcl"}, {"flow", "route"}, {"timeout_seconds", 1}},
@@ -136,10 +136,10 @@ int main(int argc, char** argv) { return testMain([&] {
     const auto failed_id = cleanup_failure["result"]["task_id"].get<uint64_t>();
     int status; eventually([&] { return ::waitpid(worker.pid, &status, WNOHANG) == worker.pid; });
     worker.pid = -1; CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 1);
-    CHECK(host.worker.getScheduler().getTask(failed_id)->getStatus() == ForgeSched::TaskStatus::RUNNING);
+    CHECK(host.worker.getScheduler().getTask(failed_id)->getStatus() == GCRP::TaskStatus::RUNNING);
     auto next = invoke({cli, "--port", port, "submit", "--target", "xcvu9p", "--revision", "58231",
         "--case", "cases/success/run.tcl", "--flow", "route", "--case-timeout", "1"});
     const auto next_id = next["result"]["task_id"].get<uint64_t>();
-    CHECK(host.worker.getScheduler().getTask(next_id)->getStatus() == ForgeSched::TaskStatus::QUEUED);
+    CHECK(host.worker.getScheduler().getTask(next_id)->getStatus() == GCRP::TaskStatus::QUEUED);
     host.stop(); CHECK(host.result);
 }); }

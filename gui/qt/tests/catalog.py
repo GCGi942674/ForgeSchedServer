@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 
-with tempfile.TemporaryDirectory(prefix='forge-qt-catalog-') as temporary:
+with tempfile.TemporaryDirectory(prefix='gcrp-qt-catalog-') as temporary:
     root = Path(temporary)
     test2 = root / 'test2'
     (test2 / 'device/case').mkdir(parents=True)
@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='forge-qt-catalog-') as temporary:
     output = root / 'catalog.json'
     config = root / 'config.conf'
     config.write_text('server.work_root={}\nserver.templates_dir={}\nserver.artifact_root={}\ngui.catalog_file={}\n'.format(test2, templates, archives, output))
-    environment = dict(os.environ, FORGESCHED_CONFIG=str(config))
+    environment = dict(os.environ, GCRP_CONFIG=str(config))
     subprocess.check_call([sys.executable, '-B', sys.argv[1]], env=environment)
     data = json.loads(output.read_text())
     if data['cases'] != ['device/case/run.tcl'] or data['revisions'] != ['12', '2']:

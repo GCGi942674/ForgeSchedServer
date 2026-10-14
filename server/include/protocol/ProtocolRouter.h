@@ -1,5 +1,5 @@
-#ifndef FORGESCHED_PROTOCOL_ROUTER_H
-#define FORGESCHED_PROTOCOL_ROUTER_H
+#ifndef GCRP_PROTOCOL_ROUTER_H
+#define GCRP_PROTOCOL_ROUTER_H
 
 #include "task/TaskService.h"
 #include "task/Task.h"
@@ -14,13 +14,13 @@
 #include "regression/RegressionService.h"
 #include "log/RunLogArchive.h"
 
-namespace ForgeSched {
+namespace GCRP {
 
 class SchedulingDriver;
 
-} // namespace ForgeSched
+} // namespace GCRP
 
-namespace ForgeSched::Protocol {
+namespace GCRP::Protocol {
 
 enum class ResponseCode {
     OK = 0,
@@ -64,6 +64,6 @@ private:
     RunLogArchive log_archive_;
 };
 
-} // namespace ForgeSched::Protocol
+} // namespace GCRP::Protocol
 
-#endif // FORGESCHED_PROTOCOL_ROUTER_H
+#endif // GCRP_PROTOCOL_ROUTER_H

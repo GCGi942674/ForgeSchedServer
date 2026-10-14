@@ -6,10 +6,10 @@
 #include <filesystem>
 #include <sqlite3.h>
 
-using namespace ForgeSched;
+using namespace GCRP;
 
 int main() {
-    char pattern[] = "/tmp/forgesched-p11-XXXXXX";
+    char pattern[] = "/tmp/gcrp-p11-XXXXXX";
     char* directory = ::mkdtemp(pattern);
     assert(directory);
     const auto db = std::string(directory) + "/state.db";
