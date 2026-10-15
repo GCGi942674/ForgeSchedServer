@@ -153,7 +153,7 @@ def main():
     report = {'side': 'worker', 'phase': 'starting', 'verdict': 'INCOMPLETE',
               'started_at': utc_now()}
     try:
-        config = config_and_root()
+        config = config_and_root("worker")
         path = report_path(config, 'dual-worker-report.json')
         lock_path = report_path(config, '.worker-smoke.lock')
         with lock_path.open('a+') as lock:

@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <QPushButton>
 #include <QElapsedTimer>
+#include <QListWidget>
 #include <memory>
 
 struct GuiSettings {
@@ -40,6 +41,8 @@ private:
     QTimer freshnessTimer_;
     QLabel* selection_{};
     QComboBox* machines_{};
+    QListWidget* hostsList_{};
+    QLineEdit* caseSearch_{};
     QTreeWidget* tasksTree_{};
     QTreeWidget* casesTree_{};
     QTreeWidget* flowOptions_{};
@@ -77,6 +80,7 @@ private:
     void showTasks();
     void loadCatalog();
     void resetFlowOptions();
+    void filterCases();
     Json selectedFlowConfig() const;
     void submitBatch();
     void submitNext();

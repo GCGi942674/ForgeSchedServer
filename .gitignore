@@ -12,6 +12,12 @@ workers_slots/
 /worker-output/
 /data/run-logs/
 
+# Private deployment settings and runtime database files
+/config/server.conf
+/config/worker.conf
+/database/*
+!/database/README.md
+
 # Object files & binaries
 *.cmake
 CMakeCache.txt

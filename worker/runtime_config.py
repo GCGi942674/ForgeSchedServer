@@ -3,16 +3,19 @@ import os
 from pathlib import Path
 
 
-def load_config():
+def load_config(role="server"):
+    if role not in ("server", "worker"):
+        raise ValueError("invalid config role")
     explicit = os.environ.get("GCRP_CONFIG")
     if explicit is not None:
         if not explicit:
             raise ValueError("GCRP_CONFIG is empty")
         path = Path(explicit)
     else:
-        path = next((directory / "config" / "gcrp.conf"
+        path = next((directory / "config" / name
                      for directory in (Path.cwd(),) + tuple(Path.cwd().parents)
-                     if (directory / "config" / "gcrp.conf").is_file()), None)
+                     for name in (role + ".conf", "gcrp.conf")
+                     if (directory / "config" / name).is_file()), None)
         if path is None:
             raise ValueError("missing config; set GCRP_CONFIG")
     values = {}

@@ -2,7 +2,7 @@
 
 C++17 scheduling server with a v0.1 TCP/JSON control plane and a minimal CLI.
 The platform is abbreviated GCRP; its C++ namespace and build/configuration identifiers use this name.
-Development and tests run in WSL; the internal deployment consumes this code.
+Development and tests run on Linux (currently the Debian development VM); the internal deployment consumes this code.
 
 - [Control plane, CLI usage and protocol boundaries](docs/control-plane-v0.1.md)
 - [Build instructions and regression coverage](tests/README.md)
@@ -20,3 +20,9 @@ persistence, recovery, regression queries, log archiving and a Qt5 GUI are avail
 Cancellation stops queued cases; remote termination of active real processes remains unsupported.
 Roles are not authentication:
 use only on trusted networks, not a public Internet endpoint.
+
+## 配置与目录更新
+
+配置仅拆为 `config/server.conf`（Server/CLI/GUI/每日提交）与 `config/worker.conf`（Worker）。旧 `gcrp.conf` 和显式 `GCRP_CONFIG` 继续兼容。
+现有部署从项目根运行 `python3 -B tools/split_config.py`；工具不会覆盖目标，也不会搬数据库、日志、身份文件或 SVN 副本。新部署使用对应 `.conf.example`。
+Qt 代码已整理为 `gui/qt/include` 与 `gui/qt/src`；构建入口不变。完整路径及日志说明见 [目录整理](docs/layout-plan.md)。

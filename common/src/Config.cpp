@@ -23,9 +23,11 @@ bool Config::loadDefault() {
     auto directory = std::filesystem::current_path(error);
     if (error) return false;
     while (true) {
-        const auto candidate = directory / "config" / "gcrp.conf";
-        if (std::filesystem::is_regular_file(candidate, error))
-            return load(candidate.string());
+        for (const char* name : {"server.conf", "gcrp.conf"}) {
+            const auto candidate = directory / "config" / name;
+            if (std::filesystem::is_regular_file(candidate, error))
+                return load(candidate.string());
+        }
         if (directory == directory.root_path()) break;
         directory = directory.parent_path();
     }

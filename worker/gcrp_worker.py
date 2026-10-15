@@ -493,7 +493,7 @@ def main():
     parser.add_argument("--demo", action="store_true", help="explicitly enable non-business demo mode")
     args = parser.parse_args()
     try:
-        config = load_config()
+        config = load_config("worker")
         explicit_output = args.output is not None
         args.host = args.host or config["network.server_ip"]
         args.port = args.port if args.port is not None else int(config["server.port"])

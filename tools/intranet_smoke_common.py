@@ -21,14 +21,14 @@ def utc_now():
     return datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def config_and_root():
+def config_and_root(role="server"):
     configured = os.environ.get('GCRP_CONFIG')
     if configured is not None:
         if not configured:
             raise ValueError('GCRP_CONFIG is empty')
         os.environ['GCRP_CONFIG'] = str(Path(configured).expanduser().resolve())
     os.chdir(str(ROOT))
-    return load_config()
+    return load_config(role)
 
 
 def path_from(config, key):

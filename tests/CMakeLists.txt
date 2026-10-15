@@ -6,6 +6,10 @@ add_test(NAME test_run_log_archive COMMAND test_run_log_archive)
 set_tests_properties(test_run_log_archive PROPERTIES TIMEOUT 30)
 
 message(STATUS "External mirror: building available tests only")
+add_executable(test_role_config test_role_config.cpp)
+target_link_libraries(test_role_config PRIVATE common)
+add_test(NAME test_role_config COMMAND test_role_config)
+set_tests_properties(test_role_config PROPERTIES TIMEOUT 15)
 foreach(name test_logging test_thread_pool test_EchoClient test_EchoServer)
   add_executable(${name} ${name}.cpp)
   if(name MATCHES "Echo")
@@ -87,6 +91,8 @@ add_test(NAME test_clock COMMAND ${Python3_EXECUTABLE} -B
   ${PROJECT_SOURCE_DIR}/tests/fixtures/test_clock.py)
 set_tests_properties(test_clock PROPERTIES TIMEOUT 45)
 add_test(NAME test_log_retention COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/fixtures/test_log_retention.py)
+add_test(NAME test_config_layout COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/test_config_layout.py)
+set_tests_properties(test_config_layout PROPERTIES TIMEOUT 30)
 set_tests_properties(test_log_retention PROPERTIES TIMEOUT 30)
 
 

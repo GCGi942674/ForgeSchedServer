@@ -10,6 +10,7 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QSignalBlocker>
@@ -162,10 +163,17 @@ MainWindow::MainWindow(GuiSettings settings, bool demo)
 QWidget* MainWindow::workersPage() {
     auto widget=page(QStringLiteral("工作机状态"),QStringLiteral("按主机查看子 slots；ONLINE 与忙碌/空闲分开显示。"));
     auto layout=qobject_cast<QVBoxLayout*>(widget->layout());
-    auto bar=new QHBoxLayout; machines_=new QComboBox; bar->addWidget(machines_,1);
+    auto bar=new QHBoxLayout; machines_=new QComboBox(widget); machines_->hide();
     bar->addWidget(pendingButton(QStringLiteral("整机上线"))); bar->addWidget(pendingButton(QStringLiteral("整机下线")));
     layout->addLayout(bar); slotsTable_=table({"slot","Worker ID","连接状态","占用 / 容量","当前任务"});
-    layout->addWidget(GcrpUi::card(slotsTable_),1);
+    auto split=new QSplitter;
+    hostsList_=new QListWidget;hostsList_->setMinimumWidth(180);
+    hostsList_->setMaximumWidth(300);split->addWidget(GcrpUi::card(hostsList_));
+    split->addWidget(GcrpUi::card(slotsTable_));split->setStretchFactor(1,1);
+    layout->addWidget(split,1);
+    connect(hostsList_,&QListWidget::currentTextChanged,this,[this](const QString& name){
+        if(!name.isEmpty())machines_->setCurrentText(name);
+    });
     auto hint=new QLabel(QStringLiteral("主机列表来自自动注册信息。远程上下线尚未接入；下线应允许当前 testcase 跑完。"));
     hint->setWordWrap(true); layout->addWidget(hint);
     connect(machines_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this]{showWorkers();});
@@ -184,7 +192,7 @@ QWidget* MainWindow::tasksPage() {
     actions->addWidget(pendingButton(QStringLiteral("删除记录"))); actions->addStretch();
     auto details=new QPushButton(QStringLiteral("查看任务 / 日志"));details->setProperty("kind","primary"); actions->addWidget(details);layout->addLayout(actions);
     tasksTree_=new QTreeWidget;
-    tasksTree_->setHeaderLabels({"批次 / Task","状态","目标","版本","工作机"});
+    tasksTree_->setHeaderLabels({"批次 / Testcase","状态","目标 / 模板","版本","工作机","PASS","FAIL","TIMEOUT","CRASH / ERROR","运行 / 排队","完成 / 总数","通过率"});
     tasksTree_->setRootIsDecorated(true);tasksTree_->setAlternatingRowColors(true);tasksTree_->setMouseTracking(true);tasksTree_->setIndentation(24);
     tasksTree_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     tasksTree_->header()->setStretchLastSection(true);layout->addWidget(GcrpUi::card(tasksTree_),1);
@@ -196,7 +204,13 @@ QWidget* MainWindow::tasksPage() {
 QWidget* MainWindow::addPage() {
     auto widget=page(QStringLiteral("添加任务"),QStringLiteral("目录树选择 testcase；人工批次不会冒充每日定时回归。"));
     auto layout=qobject_cast<QVBoxLayout*>(widget->layout());auto split=new QSplitter;
-    casesTree_=new QTreeWidget;casesTree_->setHeaderLabel(QStringLiteral("Testcase 目录树"));casesTree_->setMouseTracking(true); split->addWidget(GcrpUi::card(casesTree_));
+    auto treePanel=new QWidget;auto treeLayout=new QVBoxLayout(treePanel);
+    treeLayout->setContentsMargins(0,0,0,0);
+    caseSearch_=new QLineEdit;caseSearch_->setPlaceholderText(QStringLiteral("搜索 testcase 名称或完整路径（保留已选项）"));
+    treeLayout->addWidget(caseSearch_);
+    casesTree_=new QTreeWidget;casesTree_->setHeaderLabel(QStringLiteral("Testcase 目录树"));casesTree_->setMouseTracking(true);
+    treeLayout->addWidget(casesTree_,1);split->addWidget(GcrpUi::card(treePanel));
+    connect(caseSearch_,&QLineEdit::textChanged,this,[this]{filterCases();});
     auto formWidget=new QGroupBox(QStringLiteral("批次设置"));auto form=new QFormLayout(formWidget);
     batchName_=new QLineEdit(QStringLiteral("人工验证批次"));target_=new QLineEdit(settings_.target);
     revision_=new QComboBox;flow_=new QComboBox;
@@ -207,8 +221,26 @@ QWidget* MainWindow::addPage() {
     form->addRow(QStringLiteral("优先级"),priority_);form->addRow(QStringLiteral("单 case 超时 / 秒"),timeout_);
     flowOptions_=new QTreeWidget;flowOptions_->setHeaderLabels({"flow_config 选项","数值"});
     flowOptions_->setRootIsDecorated(false);flowOptions_->setMinimumHeight(240);
-    form->addRow(flowOptions_);
-    auto resetFlow=new QPushButton(QStringLiteral("恢复当前模板默认值"));form->addRow(resetFlow);
+    auto flowDialog=new QDialog(this);flowDialog->setWindowTitle(QStringLiteral("配置本次批次的 flow_config"));
+    flowDialog->resize(620,650);auto flowLayout=new QVBoxLayout(flowDialog);
+    auto explanation=new QLabel(QStringLiteral("勾选开启，未勾选关闭。仅影响当前批次，不修改服务端模板。"));
+    explanation->setWordWrap(true);flowLayout->addWidget(explanation);flowLayout->addWidget(flowOptions_,1);
+    auto resetFlow=new QPushButton(QStringLiteral("恢复当前模板默认值"));flowLayout->addWidget(resetFlow);
+    auto flowButtons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    flowButtons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));
+    flowButtons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    flowLayout->addWidget(flowButtons);connect(flowButtons,&QDialogButtonBox::accepted,flowDialog,&QDialog::accept);
+    connect(flowButtons,&QDialogButtonBox::rejected,flowDialog,&QDialog::reject);
+    auto configureFlow=new QPushButton(QStringLiteral("勾选执行阶段 / 比较项…"));form->addRow(QStringLiteral("flow_config"),configureFlow);
+    connect(configureFlow,&QPushButton::clicked,this,[this,flowDialog]{
+        const auto previous=selectedFlowConfig();
+        if(flowDialog->exec()==QDialog::Accepted)return;
+        for(int i=0;i<flowOptions_->topLevelItemCount();++i){auto item=flowOptions_->topLevelItem(i);
+            const int value=previous.value(item->text(0).toStdString(),0);
+            if(auto number=qobject_cast<QSpinBox*>(flowOptions_->itemWidget(item,1)))number->setValue(value);
+            else item->setCheckState(0,value?Qt::Checked:Qt::Unchecked);
+        }
+    });
     connect(resetFlow,&QPushButton::clicked,this,[this]{resetFlowOptions();});
     connect(flow_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){resetFlowOptions();});
     auto snapshot=new QPushButton(QStringLiteral("查看本次 flow_config"));form->addRow(snapshot);
@@ -303,6 +335,9 @@ void MainWindow::showWorkers() {
     const auto selected=machines_->currentText();QSet<QString> machineNames;
     for(const auto& w:workers_)machineNames.insert(text(w,"machine_id"));
     {QSignalBlocker blocked(machines_);machines_->clear();auto list=machineNames.values();list.sort();machines_->addItems(list);if(list.contains(selected))machines_->setCurrentText(selected);}
+    {QSignalBlocker blocked(hostsList_);hostsList_->clear();
+        for(int i=0;i<machines_->count();++i)hostsList_->addItem(machines_->itemText(i));
+        hostsList_->setCurrentRow(machines_->currentIndex());}
     slotsTable_->setRowCount(0);
     for(const auto& w:workers_)if(text(w,"machine_id")==machines_->currentText()){
         int row=slotsTable_->rowCount();slotsTable_->insertRow(row);cell(slotsTable_,row,0,text(w,"slot_id"));cell(slotsTable_,row,1,text(w,"worker_id"));
@@ -316,12 +351,45 @@ void MainWindow::showWorkers() {
 }
 void MainWindow::showTasks() {
     const auto current=tasksTree_->currentItem();QString selected=current?current->data(0,Qt::UserRole).toString():QString{};
+    const auto selectedBatch=current?current->data(0,Qt::UserRole+1).toString():QString{};
+    QSet<QString> expanded;
+    for(int i=0;i<tasksTree_->topLevelItemCount();++i){auto item=tasksTree_->topLevelItem(i);
+        if(item->isExpanded())expanded.insert(item->data(0,Qt::UserRole+1).toString());}
     tasksTree_->clear();QMap<QString,QTreeWidgetItem*> batches;
     for(const auto& t:tasks_){auto batch=text(t,"batch_id");if(batch.isEmpty()||batch=="—")batch=QStringLiteral("无批次 / 单任务");
         auto parent=batches.value(batch,nullptr);if(!parent){parent=new QTreeWidgetItem(tasksTree_,{batch});parent->setData(0,Qt::UserRole+1,batch);parent->setExpanded(true);batches[batch]=parent;}
-        auto item=new QTreeWidgetItem(parent,{"Task #"+text(t,"task_id"),text(t,"status"),text(t,"target"),text(t,"revision"),text(t,"worker_id")});
+        QString casePath;
+        if(t.contains("payload")&&t["payload"].is_object())casePath=text(t["payload"],"case");
+        auto item=new QTreeWidgetItem(parent,{"Task #"+text(t,"task_id")+" · "+casePath,text(t,"status"),text(t,"target"),text(t,"revision"),text(t,"worker_id")});
         item->setData(0,Qt::UserRole,text(t,"task_id"));if(item->data(0,Qt::UserRole).toString()==selected)tasksTree_->setCurrentItem(item);
+    }
+    for(auto parent:batches){QMap<QString,int> totals;QStringList revisions;
+        for(int i=0;i<parent->childCount();++i){auto item=parent->child(i);totals[item->text(1)]++;
+            if(!revisions.contains(item->text(3)))revisions<<item->text(3);}
+        const int pass=totals["SUCCEEDED"],fail=totals["FAILED"],timeout=totals["TIMEOUT"],
+            running=totals["RUNNING"]+totals["ASSIGNED"],queued=totals["QUEUED"]+totals["PENDING"],
+            done=parent->childCount()-running-queued,cancelled=totals["CANCELLED"];
+        parent->setText(1,running?"RUNNING":queued?"QUEUED":fail||timeout?"FAILED":cancelled?"CANCELLED":"SUCCEEDED");
+        parent->setText(3,revisions.join(", "));parent->setText(5,QString::number(pass));
+        parent->setText(6,QString::number(fail));parent->setText(7,QString::number(timeout));
+        parent->setText(8,QStringLiteral("见明细"));
+        parent->setText(9,QStringLiteral("%1 / %2").arg(running).arg(queued));
+        parent->setText(10,QStringLiteral("%1 / %2").arg(done).arg(parent->childCount()));
+        parent->setText(11,done>cancelled?QString::number(100.0*pass/(done-cancelled),'f',1)+"%":QStringLiteral("—"));
+        const auto batch=parent->data(0,Qt::UserRole+1).toString();
+        parent->setExpanded(expanded.contains(batch));
+        if(!selectedBatch.isEmpty()&&batch==selectedBatch)tasksTree_->setCurrentItem(parent);
     }showWorkers();
+}
+void MainWindow::filterCases() {
+    const auto query=caseSearch_->text().trimmed();
+    std::function<bool(QTreeWidgetItem*)> matches=[&](QTreeWidgetItem* item){
+        bool visible=false;
+        if(item->childCount()==0)visible=item->data(0,Qt::UserRole).toString().contains(query,Qt::CaseInsensitive);
+        else for(int i=0;i<item->childCount();++i)visible=matches(item->child(i))||visible;
+        item->setHidden(!visible);if(!query.isEmpty()&&visible)item->setExpanded(true);return visible;
+    };
+    for(int i=0;i<casesTree_->topLevelItemCount();++i)matches(casesTree_->topLevelItem(i));
 }
 void MainWindow::loadCatalog() {
     try {
@@ -335,7 +403,7 @@ void MainWindow::loadCatalog() {
         for(const auto& value:catalog_["cases"]){auto path=QString::fromStdString(value.get<std::string>());auto parts=path.split('/');QString key;auto parent=root;
             for(int i=0;i<parts.size()-1;++i){key+=(key.isEmpty()?"":"/")+parts[i];auto item=directories.value(key,nullptr);if(!item){item=new QTreeWidgetItem(parent,{parts[i]});item->setFlags(item->flags()|Qt::ItemIsUserCheckable|Qt::ItemIsAutoTristate);item->setCheckState(0,Qt::Unchecked);directories[key]=item;}parent=item;}
             auto leaf=new QTreeWidgetItem(parent,{"run.tcl"});leaf->setFlags(leaf->flags()|Qt::ItemIsUserCheckable);leaf->setCheckState(0,Qt::Unchecked);leaf->setData(0,Qt::UserRole,path);leaf->setToolTip(0,path);
-        }casesTree_->expandToDepth(2);
+        }casesTree_->expandToDepth(2);filterCases();
         for(const auto& r:catalog_["revisions"])revision_->addItem(QString::fromStdString(r.get<std::string>()));
         for(auto it=catalog_["templates"].begin();it!=catalog_["templates"].end();++it)flow_->addItem(QString::fromStdString(it.key()));
         submit_->setEnabled(demo_||operations_.contains("submit_task"));
@@ -498,11 +566,19 @@ bool MainWindow::selfTest() {
     option->setCheckState(0,option->checkState(0)==Qt::Checked?Qt::Unchecked:Qt::Checked);
     if(before==selectedFlowConfig()||defaults!=catalog_["templates"][flow_->currentText().toStdString()])return false;
     resetFlowOptions();if(before!=selectedFlowConfig())return false;
+    if(hostsList_->count()!=machines_->count()||tasksTree_->columnCount()!=12)return false;
     if(!demo_||pages_->count()!=4||machines_->count()!=3||tasksTree_->topLevelItemCount()!=1)return false;
+    tasksTree_->topLevelItem(0)->setExpanded(true);
+    tasksTree_->setCurrentItem(tasksTree_->topLevelItem(0));showTasks();
+    if(!tasksTree_->topLevelItem(0)->isExpanded()||tasksTree_->currentItem()!=tasksTree_->topLevelItem(0))return false;
     auto root=casesTree_->topLevelItem(0);if(!root)return false;root->setCheckState(0,Qt::Checked);
     if(selectedCases(casesTree_).size()!=3)return false;
     for(QTreeWidgetItemIterator it(casesTree_);*it;++it)if(!(*it)->data(0,Qt::UserRole).toString().isEmpty()){(*it)->setCheckState(0,Qt::Unchecked);break;}
     if(root->checkState(0)!=Qt::PartiallyChecked||selectedCases(casesTree_).size()!=2)return false;
+    const auto chosen=selectedCases(casesTree_);
+    caseSearch_->setText("a-case-that-does-not-exist");
+    if(!root->isHidden()||selectedCases(casesTree_)!=chosen)return false;
+    caseSearch_->clear();if(root->isHidden())return false;
     const auto navigation=findChildren<QPushButton*>("navigation");
     if(navigation.size()!=4)return false;
     navigation[2]->click();if(pages_->currentIndex()!=2)return false;

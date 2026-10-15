@@ -107,7 +107,7 @@ class SlotManager:
         print('[MANAGER] started {} pid={}'.format(slot, process.pid), flush=True)
 
     def reload_config(self):
-        config = load_config()
+        config = load_config("worker")
         machine, slots, output = slot_settings(config)
         slots_root = Path(config.get('worker.slots_root') or './worker/workers_slots').expanduser().resolve()
         if machine != self.machine or output != self.output_root or slots_root != self.slots_root:
@@ -171,7 +171,7 @@ def main():
     if not 0 <= args.demo_seconds <= 3600:
         parser.error('invalid demo duration')
     try:
-        config = load_config()
+        config = load_config("worker")
         if args.migration_preview:
             machine, slots, output = slot_settings(config)
             root = Path(config.get('worker.slots_root') or './worker/workers_slots').expanduser().resolve()

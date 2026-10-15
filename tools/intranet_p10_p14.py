@@ -564,7 +564,7 @@ def main():
     parser.add_argument('--token', help='one-time token printed by Server controller')
     args = parser.parse_args()
     try:
-        config = config_and_root()
+        config = config_and_root(args.role)
         if args.role == 'server':
             return server_main(config, args)
         require(args.token, 'Worker requires --token from Server controller')

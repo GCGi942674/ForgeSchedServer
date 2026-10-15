@@ -18,7 +18,7 @@ template<class T> T number(const std::string& text) {
 }
 void usage() {
     std::cout << "Usage: gcrp_client [--host IPv4] [--port PORT] [--timeout-ms MS]\n"
-              << "Defaults come from GCRP_CONFIG or config/gcrp.conf.\n"
+              << "Defaults come from GCRP_CONFIG, config/server.conf or legacy config/gcrp.conf.\n"
               << "  submit --target TARGET --revision REV [--priority -100..100]\n"
               << "         [--case PATH/run.tcl --flow PROFILE --case-timeout SEC]\n"
               << "  query TASK_ID\n  cancel TASK_ID\n"

@@ -12,11 +12,11 @@ QString findConfig() {
     const auto explicitPath=QString::fromLocal8Bit(qgetenv("GCRP_CONFIG"));
     if(qEnvironmentVariableIsSet("GCRP_CONFIG"))return explicitPath;
     for(const auto& base:{QDir::currentPath(),QCoreApplication::applicationDirPath()}){
-        QDir directory(base);for(int i=0;i<8;++i){auto path=directory.filePath("config/gcrp.conf");if(QFile::exists(path))return path;if(!directory.cdUp())break;}
+        QDir directory(base);for(int i=0;i<8;++i){for(const auto& name:{"server.conf","gcrp.conf"}){auto path=directory.filePath(QString("config/")+name);if(QFile::exists(path))return path;}if(!directory.cdUp())break;}
     }return {};
 }
 GuiSettings settings(const QString& path) {
-    QFile file(path);if(path.isEmpty()||!file.open(QIODevice::ReadOnly))throw std::runtime_error("cannot read config/gcrp.conf; use --config");
+    QFile file(path);if(path.isEmpty()||!file.open(QIODevice::ReadOnly))throw std::runtime_error("cannot read config/server.conf (or legacy gcrp.conf); use --config");
     QTextStream stream(&file);stream.setCodec("UTF-8");QMap<QString,QString> values;
     while(!stream.atEnd()){auto line=stream.readLine().trimmed();if(line.isEmpty()||line.startsWith('#'))continue;auto at=line.indexOf('=');if(at<1)throw std::runtime_error("malformed config line");values[line.left(at).trimmed()]=line.mid(at+1).trimmed();}
     auto integer=[&values](const QString& key,int fallback,int low,int high){bool ok=false;int value=values.contains(key)?values[key].toInt(&ok):fallback;if(!values.contains(key))ok=true;if(!ok||value<low||value>high)throw std::runtime_error(("invalid "+key).toStdString());return value;};

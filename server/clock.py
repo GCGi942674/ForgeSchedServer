@@ -23,7 +23,9 @@ except ImportError:
     raise SystemExit("PyYAML is required for Tasks.yaml (python3 -m pip install PyYAML)")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "worker"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from runtime_config import load_config
+from daily_log import daily_log
 
 MAX_FRAME = 1024 * 1024
 ZIP_NAME = re.compile(r"Galax[Cc]ore_(\d+)\.zip\Z")
@@ -318,9 +320,10 @@ def run(config, dry_run=False, check_only=False, interval=30):
             state["task_ids"].append(task_id)
             state["uncertain"] = False
             atomic_text(state_path, json.dumps(state, sort_keys=True))
-            print("[{}/{}] task_id={} template={} case={}".format(
-                index + 1, len(plan), task_id, entry["payload"]["flow"], entry["payload"]["case"]),
-                flush=True)
+            if index == 0 or (index + 1) % 100 == 0 or index + 1 == len(plan):
+                print("[{}/{}] task_id={} template={} case={}".format(
+                    index + 1, len(plan), task_id, entry["payload"]["flow"], entry["payload"]["case"]),
+                    flush=True)
             if index + 1 < len(plan):
                 time.sleep(interval)
         state["phase"] = "complete"
@@ -336,7 +339,13 @@ def main():
     parser.add_argument("--interval", type=float, default=30)
     args = parser.parse_args()
     try:
-        return run(load_config(), args.dry_run, args.check_only, args.interval)
+        config = load_config("server")
+        with daily_log(config):
+            try:
+                return run(config, args.dry_run, args.check_only, args.interval)
+            except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
+                print("[CLOCK] " + str(error), file=sys.stderr)
+                return 1
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
         print("[CLOCK] " + str(error), file=sys.stderr)
         return 1
