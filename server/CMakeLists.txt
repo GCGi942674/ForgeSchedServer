@@ -13,6 +13,7 @@ add_library(gcrp_server_core STATIC
     src/Message.cpp
     src/NetworkWorkerDispatcher.cpp
     src/ProtocolRouter.cpp
+    src/GuiCatalog.cpp
     src/RegressionService.cpp
     src/ProgressService.cpp
     src/RunLogArchive.cpp

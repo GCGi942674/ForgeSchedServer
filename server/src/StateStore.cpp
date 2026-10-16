@@ -101,7 +101,7 @@ StateStore::StateStore(const std::string& path, int busy_timeout_ms) {
             check(sqlite3_step(version.value), db_);
             schema_version = sqlite3_column_int(version.value, 0);
         }
-        if (schema_version < 0 || schema_version > 2)
+        if (schema_version < 0 || schema_version > 3)
             throw std::runtime_error("unsupported GCRP database schema version");
         exec("BEGIN IMMEDIATE");
         try {
@@ -112,7 +112,8 @@ StateStore::StateStore(const std::string& path, int busy_timeout_ms) {
             exec("CREATE TABLE IF NOT EXISTS recovery_decisions (run_id TEXT PRIMARY KEY REFERENCES task_runs(run_id), task_id INTEGER NOT NULL REFERENCES tasks(task_id), worker_id TEXT NOT NULL, decision TEXT NOT NULL CHECK(decision IN ('requeued','failed','cancelled')))");
             exec("CREATE INDEX IF NOT EXISTS tasks_queue ON tasks(status,recovery_required,priority,queue_sequence)");
             exec("CREATE INDEX IF NOT EXISTS tasks_batch ON tasks(batch_id,status)");
-            exec("PRAGMA user_version=2");
+            exec("CREATE TABLE IF NOT EXISTS worker_management (name TEXT PRIMARY KEY, value TEXT NOT NULL)");
+            exec("PRAGMA user_version=3");
             exec("UPDATE tasks SET recovery_required=1 WHERE status IN ('ASSIGNED','RUNNING')");
             exec("COMMIT");
         } catch (...) { exec("ROLLBACK"); throw; }
@@ -136,6 +137,7 @@ StateStore::~StateStore() {
 }
 
 std::vector<PersistedTask> StateStore::loadTasks() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     Statement rows(db_, "SELECT task_id,task_type,target,revision,priority,status,payload_json,execution_json,COALESCE(worker_id,''),retry_count,queue_sequence,COALESCE(run_id,''),recovery_required,created_at_ms,COALESCE(started_at_ms,0),COALESCE(finished_at_ms,0) FROM tasks ORDER BY task_id");
     std::vector<PersistedTask> result;
     while (true) {
@@ -163,6 +165,7 @@ std::vector<PersistedTask> StateStore::loadTasks() const {
 }
 
 std::vector<std::string> StateStore::loadStoppedBatches() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     Statement rows(db_, "SELECT batch_id FROM batches WHERE stop_requested=1");
     std::vector<std::string> result;
     while (true) {
@@ -175,6 +178,7 @@ std::vector<std::string> StateStore::loadStoppedBatches() const {
 }
 
 std::optional<std::pair<TaskId, std::string>> StateStore::findSubmission(const std::string& key) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     Statement query(db_, "SELECT task_id,request_json FROM submission_keys WHERE submission_key=?");
     query.text(1, key);
     int step = sqlite3_step(query.value);
@@ -186,6 +190,7 @@ std::optional<std::pair<TaskId, std::string>> StateStore::findSubmission(const s
 
 std::optional<std::string> StateStore::recoveryDecision(const std::string& run_id,
         TaskId task_id, const std::string& worker_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     Statement query(db_, "SELECT decision FROM recovery_decisions WHERE run_id=? AND task_id=? AND worker_id=?");
     query.text(1, run_id);
     query.number(2, checkedId(task_id));
@@ -197,6 +202,7 @@ std::optional<std::string> StateStore::recoveryDecision(const std::string& run_i
 }
 
 std::optional<std::string> StateStore::archiveOwner(TaskId task_id, const std::string& run_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     Statement query(db_, "SELECT worker_id FROM task_runs WHERE task_id=? AND run_id=? "
                          "AND status IN ('SUCCEEDED','FAILED','TIMEOUT')");
     query.number(1, checkedId(task_id));
@@ -212,6 +218,7 @@ void StateStore::save(const std::vector<Task>& tasks,
                       const std::optional<std::string>& run_status_override,
                       const std::optional<std::pair<std::string, std::string>>& submission,
                       const std::optional<std::pair<std::string, std::string>>& recovery) {
+    std::lock_guard<std::mutex> lock(mutex_);
     exec("BEGIN IMMEDIATE");
     try {
         Statement batch(db_, "INSERT OR IGNORE INTO batches(batch_id) VALUES(?)");
@@ -287,5 +294,18 @@ void StateStore::save(const std::vector<Task>& tasks,
         }
         exec("COMMIT");
     } catch (...) { exec("ROLLBACK"); throw; }
+}
+nlohmann::json StateStore::loadWorkerControls() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Statement query(db_, "SELECT value FROM worker_management WHERE name='controls'");
+    int step=sqlite3_step(query.value);
+    if(step==SQLITE_DONE)return {{"machines",nlohmann::json::object()},{"workers",nlohmann::json::object()}};
+    check(step,db_);return nlohmann::json::parse(column(query.value,0));
+}
+void StateStore::saveWorkerControls(const nlohmann::json& controls) {
+    const auto serialized=controls.dump();
+    std::lock_guard<std::mutex> lock(mutex_);
+    Statement update(db_, "INSERT OR REPLACE INTO worker_management(name,value) VALUES('controls',?)");
+    update.text(1,serialized);update.run();
 }
 } // namespace GCRP

@@ -1,0 +1,211 @@
+#include "ConsoleSupport.h"
+
+void MainWindow::showTasks() {
+    const auto current=tasksTree_->currentItem();const auto selected=current?current->data(0,Qt::UserRole+1).toString():QString{};
+    tasksTree_->clear();QMap<QString,QTreeWidgetItem*> batches;QMap<QString,Json> metadata;
+    int runningAll=0,queuedAll=0,failAll=0;
+    for(const auto& t:tasks_){
+        auto batch=text(t,"batch_id");if(batch.isEmpty()||batch=="—")batch=QStringLiteral("无批次 / 单任务");
+        auto parent=batches.value(batch,nullptr);
+        if(!parent){parent=new QTreeWidgetItem(tasksTree_,{batch});parent->setData(0,Qt::UserRole+1,batch);parent->setExpanded(false);batches[batch]=parent;metadata[batch]=t;}
+        const auto payload=t.value("payload",Json::object());auto path=text(payload,"case");
+        auto item=new QTreeWidgetItem(parent,{path,text(t,"status"),text(t,"target"),text(t,"revision"),text(t,"worker_id")});
+        item->setData(0,Qt::UserRole,text(t,"task_id"));item->setData(0,Qt::UserRole+2,outcome(t));
+        const auto status=text(t,"status");if(status=="RUNNING"||status=="ASSIGNED")++runningAll;else if(status=="QUEUED"||status=="PENDING")++queuedAll;else if(status=="FAILED"||status=="TIMEOUT")++failAll;
+    }
+    for(auto it=batches.begin();it!=batches.end();++it){auto parent=it.value();const auto batch=it.key();const auto& t=metadata[batch];
+        const auto payload=t.value("payload",Json::object()),context=payload.value("context",Json::object());
+        QMap<QString,int> totals,business;QStringList revisions;
+        for(int i=0;i<parent->childCount();++i){auto item=parent->child(i);totals[item->text(1)]++;business[item->data(0,Qt::UserRole+2).toString()]++;if(!revisions.contains(item->text(3)))revisions<<item->text(3);}
+        const int pass=business["PASS"],fail=business["FAIL"],timeout=totals["TIMEOUT"],running=totals["RUNNING"]+totals["ASSIGNED"],queued=totals["QUEUED"]+totals["PENDING"],cancelled=totals["CANCELLED"],total=parent->childCount(),done=total-running-queued;
+        const auto status=running?"RUNNING":queued?"QUEUED":fail||timeout||business["CRASH"]||business["ERROR"]?"FAIL":cancelled?"CANCELLED":business["UNKNOWN"]?"UNKNOWN":"PASS";
+        const auto source=QString::fromStdString(context.value("source",std::string("unknown")));parent->setData(0,Qt::UserRole+2,source);
+        const auto name=QString::fromStdString(context.value("name",batch.toStdString())),flow=QString::fromStdString(context.value("template",payload.value("flow",std::string())));
+        auto title=new QLabel(name.toHtmlEscaped()+"<br><span style='color:#8493a8;font-size:10px'>"+batch.toHtmlEscaped()+"<br>"+flow.toHtmlEscaped()+"</span>");title->setContentsMargins(12,10,8,10);title->setTextFormat(Qt::RichText);title->setWordWrap(true);tasksTree_->setItemWidget(parent,0,title);
+        parent->setText(0,QString{});parent->setData(0,Qt::UserRole+4,name+" "+batch+" "+flow);
+        parent->setText(1,revisions.join(", ")+"\n"+(source=="scheduled"?QStringLiteral("每日定时"):source=="manual"?QStringLiteral("人工提交"):QStringLiteral("来源未分类")));
+        auto badge=GcrpUi::badge(status);tasksTree_->setItemWidget(parent,2,badge);
+        auto counts=new QLabel(QStringLiteral("<span style='color:#188365'>%1 PASS</span>　<span style='color:#c14450'>%2 FAIL</span>　<span style='color:#a36c12'>%3 TIMEOUT</span><br><span style='color:#8493a8;font-size:10px'>CRASH %4 · ERROR %5 · 取消 %6</span>").arg(pass).arg(fail).arg(timeout).arg(business["CRASH"]).arg(business["ERROR"]).arg(cancelled));counts->setTextFormat(Qt::RichText);counts->setContentsMargins(8,8,8,8);tasksTree_->setItemWidget(parent,3,counts);
+        parent->setText(4,QStringLiteral("%1 / %2").arg(running).arg(queued));
+        auto progress=new QWidget;auto progressBox=new QVBoxLayout(progress);progressBox->setContentsMargins(8,10,8,10);progressBox->setSpacing(5);
+        auto finished=new QLabel(QStringLiteral("%1/%2 · 完成 %3%").arg(done).arg(total).arg(total?100*done/total:0));auto bar=new QProgressBar;bar->setRange(0,qMax(1,total));bar->setValue(done);bar->setTextVisible(false);bar->setFixedHeight(5);
+        auto rate=new QLabel(done>cancelled?QStringLiteral("通过率 %1%").arg(100.0*pass/(done-cancelled),0,'f',1):QStringLiteral("通过率 —"));rate->setObjectName("muted");progressBox->addWidget(finished);progressBox->addWidget(bar);progressBox->addWidget(rate);tasksTree_->setItemWidget(parent,5,progress);
+        const auto created=t.value("created_at_ms",int64_t(0));parent->setText(6,created?QDateTime::fromMSecsSinceEpoch(created).toString("yyyy-MM-dd\nHH:mm:ss"):QStringLiteral("—"));
+        auto controls=new QWidget;auto actions=new QHBoxLayout(controls);actions->setContentsMargins(4,4,4,4);actions->setSpacing(5);
+        auto details=new QPushButton(QStringLiteral("详情"));auto cancel=new QPushButton(QStringLiteral("停止后续"));auto deletion=new QPushButton(QStringLiteral("删除"));
+        deletion->setEnabled(false);deletion->setProperty("kind","danger");deletion->setToolTip(QStringLiteral("待服务端管理员身份认证接入后启用"));
+        cancel->setEnabled(queued>0&&(demo_||(!tasksStale_&&operations_.contains("cancel_batch")))&&batch!=QStringLiteral("无批次 / 单任务"));
+        actions->addWidget(details);actions->addWidget(cancel);actions->addWidget(deletion);
+        connect(details,&QPushButton::clicked,this,[this,batch]{openBatch(batch);});
+        connect(cancel,&QPushButton::clicked,this,[this,parent]{tasksTree_->setCurrentItem(parent);cancelSelection();});
+        tasksTree_->setItemWidget(parent,7,controls);parent->setSizeHint(0,QSize(180,92));
+        if(batch==selected)tasksTree_->setCurrentItem(parent);
+    }
+    const QList<int> values{batches.size(),runningAll,queuedAll,failAll};for(int i=0;i<taskMetrics_.size();++i)taskMetrics_[i]->setText(QString::number(values[i]));
+    if(navCount_)navCount_->setText(QString::number(batches.size()));
+    filterTasks();showWorkers();
+}
+
+void MainWindow::filterTasks() {
+    const auto query=taskSearch_->text().trimmed(),status=taskStatus_->currentData().toString(),source=taskSource_->currentData().toString();
+    QList<QTreeWidgetItem*> matched;int matchedCases=0;
+    for(int i=0;i<tasksTree_->topLevelItemCount();++i){auto batch=tasksTree_->topLevelItem(i);int count=0;
+        for(int j=0;j<batch->childCount();++j){auto item=batch->child(j);QStringList fields{batch->text(0)};
+            fields<<batch->data(0,Qt::UserRole+4).toString();for(int c=0;c<5;++c)fields<<item->text(c);
+            const auto value=item->data(0,Qt::UserRole+2).toString();
+            const bool match=(source.isEmpty()||batch->data(0,Qt::UserRole+2).toString()==source)&&(status.isEmpty()||value==status||(status=="RUNNING"&&value=="ASSIGNED")||(status=="QUEUED"&&value=="PENDING"))&&fields.join(" ").contains(query,Qt::CaseInsensitive);
+            item->setHidden(!match);if(match)++count;
+        }batch->setHidden(true);if(count){matched<<batch;matchedCases+=count;}
+    }
+    const int pages=qMax(1,(matched.size()+19)/20);taskPage_=qBound(0,taskPage_,pages-1);
+    for(int i=taskPage_*20;i<qMin(matched.size(),(taskPage_+1)*20);++i)matched[i]->setHidden(false);
+    taskPrev_->setEnabled(taskPage_>0);taskNext_->setEnabled(taskPage_+1<pages);
+    taskSummary_->setText(QStringLiteral("%1 个匹配批次 · %2 个匹配 testcase · 第 %3/%4 页\n仅当前已加载快照（最多 5000 条任务）；统计卡片非全库总数").arg(matched.size()).arg(matchedCases).arg(taskPage_+1).arg(pages));
+    bool omitted=false;for(const auto& task:tasks_)omitted=omitted||task.value("summary_truncated",false);
+    if(omitted)taskSummary_->setText(taskSummary_->text()+QStringLiteral("\n部分摘要超限已省略；请打开任务详情。缺少路径的记录不会导出到路径清单。"));
+}
+
+
+void MainWindow::openBatch(const QString& batch) {
+    auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("batchDialog");dialog->resize(1120,740);
+    dialog->setWindowTitle(QStringLiteral("批次详情 · ")+batch);auto layout=new QVBoxLayout(dialog);layout->setContentsMargins(24,22,24,20);layout->setSpacing(16);
+    auto top=new QHBoxLayout;auto heading=new QLabel(batch);heading->setObjectName("dialogTitle");heading->setTextFormat(Qt::PlainText);heading->setWordWrap(true);top->addWidget(heading,1);
+    auto close=new QPushButton(QStringLiteral("关闭"));top->addWidget(close);connect(close,&QPushButton::clicked,dialog,&QDialog::close);layout->addLayout(top);
+    auto snapshot=std::make_shared<Json>(Json::array());QMap<QString,int> totals;
+    for(const auto& task:tasks_){auto id=text(task,"batch_id");if(id.isEmpty()||id=="—")id=QStringLiteral("无批次 / 单任务");if(id==batch){snapshot->push_back(task);totals[text(task,"status")]++;}}
+    auto stats=new QLabel(QStringLiteral("总例数 %1　 ·　 PASS %2　 FAIL %3　 TIMEOUT %4　 ·　 运行 %5 / 排队 %6").arg(snapshot->size()).arg(totals["SUCCEEDED"]).arg(totals["FAILED"]).arg(totals["TIMEOUT"]).arg(totals["RUNNING"]+totals["ASSIGNED"]).arg(totals["QUEUED"]+totals["PENDING"]));stats->setWordWrap(true);stats->setObjectName("notice");layout->addWidget(stats);
+    auto hint=new QLabel(QStringLiteral("当前已加载快照，不保证包含整个批次。筛选 / 导出仅覆盖本快照；缺少日志不代表 testcase 失败。"));hint->setObjectName("muted");hint->setWordWrap(true);layout->addWidget(hint);
+    auto toolbar=new QHBoxLayout;auto status=new QComboBox;for(int i=0;i<taskStatus_->count();++i)status->addItem(taskStatus_->itemText(i),taskStatus_->itemData(i));
+    auto search=new QLineEdit;search->setPlaceholderText(QStringLiteral("搜索 testcase 路径 / Worker"));search->setClearButtonEnabled(true);
+    auto exportButton=new QPushButton(QStringLiteral("导出匹配清单…"));toolbar->addWidget(status);toolbar->addWidget(search,1);toolbar->addWidget(exportButton);layout->addLayout(toolbar);
+    auto rows=table({QStringLiteral("Testcase"),QStringLiteral("状态"),QStringLiteral("阶段 / 原因"),QStringLiteral("操作")});rows->setObjectName("caseResults");rows->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);rows->horizontalHeader()->setSectionResizeMode(0,QHeaderView::Stretch);rows->setColumnWidth(1,90);rows->setColumnWidth(2,235);rows->setColumnWidth(3,165);rows->verticalHeader()->setDefaultSectionSize(66);layout->addWidget(GcrpUi::card(rows),1);
+    auto footer=new QHBoxLayout;auto count=new QLabel;count->setObjectName("muted");footer->addWidget(count,1);auto prev=new QPushButton(QStringLiteral("上一页"));auto next=new QPushButton(QStringLiteral("下一页"));footer->addWidget(prev);footer->addWidget(next);layout->addLayout(footer);
+    auto pageIndex=std::make_shared<int>(0);auto matches=std::make_shared<Json>(Json::array());
+    auto paint=[this,rows,search,status,snapshot,count,pageIndex,matches,prev,next]{
+        *matches=Json::array();rows->setRowCount(0);
+        for(const auto& task:*snapshot){const auto state=text(task,"status"),filter=status->currentData().toString();const auto payload=task.value("payload",Json::object());const auto path=text(payload,"case");
+            if(!filter.isEmpty()&&outcome(task)!=filter&&!(filter=="RUNNING"&&state=="ASSIGNED")&&!(filter=="QUEUED"&&state=="PENDING"))continue;
+            if(!(path+" "+text(task,"worker_id")).contains(search->text().trimmed(),Qt::CaseInsensitive))continue;matches->push_back(task);
+        }
+        const int pages=qMax(1,(int(matches->size())+9)/10);*pageIndex=qBound(0,*pageIndex,pages-1);
+        for(int i=*pageIndex*10;i<qMin(int(matches->size()),(*pageIndex+1)*10);++i){const auto task=(*matches)[i];const auto state=text(task,"status"),path=text(task.value("payload",Json::object()),"case");const auto execution=task.value("execution",Json::object());const int row=rows->rowCount();rows->insertRow(row);
+            cell(rows,row,0,path);rows->item(row,0)->setToolTip(path+"\nTask #"+text(task,"task_id")+" · "+text(task,"worker_id"));
+            rows->setCellWidget(row,1,GcrpUi::badge(outcome(task)));
+            cell(rows,row,2,text(execution,"case_reason")+"\n"+text(execution,"reason"));
+            auto controls=new QWidget;auto actions=new QHBoxLayout(controls);actions->setContentsMargins(4,4,4,4);auto logs=new QPushButton(QStringLiteral("原始 run"));auto details=new QPushButton(QStringLiteral("详情"));actions->addWidget(logs);actions->addWidget(details);rows->setCellWidget(row,3,controls);
+            connect(logs,&QPushButton::clicked,rows,[this,task]{openLogs(task);});connect(details,&QPushButton::clicked,rows,[this,task]{openTask(task["task_id"].get<uint64_t>());});
+        }
+        count->setText(QStringLiteral("匹配 %1 / 快照 %2 条　 ·　 第 %3/%4 页").arg(matches->size()).arg(snapshot->size()).arg(*pageIndex+1).arg(pages));prev->setEnabled(*pageIndex>0);next->setEnabled(*pageIndex+1<pages);
+    };
+    connect(search,&QLineEdit::textChanged,dialog,[paint,pageIndex]{*pageIndex=0;paint();});connect(status,QOverload<int>::of(&QComboBox::currentIndexChanged),dialog,[paint,pageIndex]{*pageIndex=0;paint();});
+    connect(prev,&QPushButton::clicked,dialog,[paint,pageIndex]{--*pageIndex;paint();});connect(next,&QPushButton::clicked,dialog,[paint,pageIndex]{++*pageIndex;paint();});
+    connect(exportButton,&QPushButton::clicked,dialog,[dialog,matches]{
+        QDialog popup(dialog);popup.setObjectName("exportDialog");popup.setWindowTitle(QStringLiteral("导出 testcase 清单"));popup.resize(720,610);
+        auto box=new QVBoxLayout(&popup);box->setContentsMargins(24,22,24,20);box->setSpacing(14);
+        auto title=new QLabel(QStringLiteral("导出 testcase 清单"));title->setObjectName("dialogTitle");box->addWidget(title);
+        auto notice=new QLabel(QStringLiteral("覆盖当前筛选的所有匹配记录，不只本页。仅限当前已加载快照，不保证包含整个历史批次。"));notice->setWordWrap(true);notice->setObjectName("notice");box->addWidget(notice);
+        auto formats=new QComboBox;formats->setObjectName("exportFormat");formats->addItem(QStringLiteral("TXT · run.tcl 相对路径"));formats->addItem(QStringLiteral("CSV · Task / Run / 路径 / 结果"));box->addWidget(formats);
+        auto grid=new QGridLayout;QMap<QString,QCheckBox*> checks;const QStringList states{"PASS","FAIL","TIMEOUT","CRASH","ERROR","UNKNOWN","CANCELLED","RUNNING","QUEUED"};
+        for(int i=0;i<states.size();++i){auto check=new QCheckBox(states[i]);check->setChecked(i<6);checks[states[i]]=check;grid->addWidget(check,i/5,i%5);}box->addLayout(grid);
+        auto zip=new QCheckBox(QStringLiteral("同时打包执行证据 ZIP · 后端待接入"));zip->setEnabled(false);box->addWidget(zip);
+        auto count=new QLabel;count->setObjectName("exportCount");box->addWidget(count);auto preview=new QPlainTextEdit;preview->setObjectName("exportPreview");preview->setReadOnly(true);box->addWidget(preview,1);
+        Json filtered=Json::array();const auto source=*matches;
+        auto paint=[&filtered,source,checks,count,preview]{filtered=Json::array();QStringList paths;
+            for(const auto& task:source){auto state=outcome(task);if(state=="ASSIGNED")state="RUNNING";if(state=="PENDING")state="QUEUED";
+                const auto path=text(task.value("payload",Json::object()),"case");if(checks.contains(state)&&checks[state]->isChecked()&&!path.isEmpty()&&path!="—"){filtered.push_back(task);if(paths.size()<12)paths<<path;}}
+            count->setText(QStringLiteral("将导出 %1 条记录 · 下方仅预览前 12 条").arg(filtered.size()));preview->setPlainText(paths.join("\n"));};
+        for(auto check:checks)QObject::connect(check,&QCheckBox::toggled,&popup,[paint]{paint();});
+        auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("选择位置并导出"));buttons->button(QDialogButtonBox::Save)->setProperty("kind","primary");buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));box->addWidget(buttons);
+        QObject::connect(buttons,&QDialogButtonBox::accepted,&popup,&QDialog::accept);QObject::connect(buttons,&QDialogButtonBox::rejected,&popup,&QDialog::reject);paint();
+        if(popup.exec()!=QDialog::Accepted)return;if(filtered.empty()){QMessageBox::information(dialog,QStringLiteral("没有匹配记录"),QStringLiteral("请先勾选需要导出的结果类型。"));return;}
+        QString format=formats->currentIndex()==0?QStringLiteral("路径清单 (*.txt)"):QStringLiteral("结果明细 (*.csv)");auto path=QFileDialog::getSaveFileName(dialog,QStringLiteral("导出所有匹配行（当前快照，不只本页）"),formats->currentIndex()==0?"testcases.txt":"testcases.csv","路径清单 (*.txt);;结果明细 (*.csv)",&format);if(path.isEmpty())return;
+        const bool csv=format.contains("csv");QByteArray output=csv?QByteArray("\xEF\xBB\xBFtask_id,run_id,testcase,status,outcome,worker_id,revision,reason\r\n"):QByteArray{};
+        int exported=0;
+        for(const auto& task:filtered){auto path=text(task.value("payload",Json::object()),"case");if(path.isEmpty()||path=="—")continue;
+            if(csv){QStringList columns{text(task,"task_id"),text(task,"run_id"),path,text(task,"status"),outcome(task),text(task,"worker_id"),text(task,"revision"),text(task.value("execution",Json::object()),"reason")};for(auto& column:columns)column=csvCell(column);output+=columns.join(",").toUtf8()+"\r\n";}
+            else output+=path.toUtf8()+"\n";++exported;
+        }
+        QSaveFile file(path);if(!file.open(QIODevice::WriteOnly)||file.write(output)!=output.size()||!file.commit())QMessageBox::warning(dialog,QStringLiteral("导出失败"),file.errorString());
+        else QMessageBox::information(dialog,QStringLiteral("已导出"),QStringLiteral("保存 %1 条匹配记录；仅覆盖已加载快照，非全库导出。").arg(exported));
+    });paint();dialog->show();
+}
+
+void MainWindow::openTask(uint64_t id) {
+    auto display=[this](RpcReply r){if(!r.ok){QMessageBox::warning(this,QStringLiteral("查询失败"),r.error);return;}
+        auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(QStringLiteral("Task 详情与日志"));dialog->resize(850,650);auto layout=new QVBoxLayout(dialog);
+        auto body=new QPlainTextEdit(QString::fromStdString(r.result.dump(2)));body->setReadOnly(true);layout->addWidget(body,1);
+        auto logs=new QPushButton(QStringLiteral("查看 Server 归档日志"));layout->addWidget(logs);connect(logs,&QPushButton::clicked,this,[this,task=r.result]{openLogs(task);});dialog->show();};
+    if(demo_){Json t={{"task_id",id},{"run_id","demo-run"},{"status","SUCCEEDED"},{"payload",{{"case","convergentRoundingEven/run.tcl"},{"flow","route"}}}};display({true,{},t,{}});}
+    else rpc_.request("query_task",{{"task_id",id}},display);
+}
+
+void MainWindow::openLogs(const Json& task) {
+    if(!task.contains("run_id")||text(task,"run_id").isEmpty()||text(task,"run_id")=="—"||text(task,"status")=="RUNNING"||text(task,"status")=="ASSIGNED"||text(task,"status")=="QUEUED"||text(task,"status")=="PENDING"){
+        QMessageBox::information(this,QStringLiteral("日志待生成 / 待上传"),QStringLiteral("当前 API 提供执行结束后的归档证据。正在执行或缺少 run_id 时不能读取；缺少文件不代表失败。"));return;
+    }
+    auto dialog=new QDialog(this);dialog->setObjectName("logDialog");dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(QStringLiteral("原始 run · GalaxCore 执行证据"));dialog->resize(1100,740);
+    auto layout=new QVBoxLayout(dialog);layout->setContentsMargins(24,22,24,20);layout->setSpacing(14);
+    auto titleRow=new QHBoxLayout;auto title=new QLabel(QStringLiteral("原始 run / 执行证据"));title->setObjectName("dialogTitle");titleRow->addWidget(title,1);auto close=new QPushButton(QStringLiteral("关闭"));titleRow->addWidget(close);connect(close,&QPushButton::clicked,dialog,&QDialog::close);layout->addLayout(titleRow);
+    auto description=new QLabel(text(task.value("payload",Json::object()),"case")+"\nTask #"+text(task,"task_id")+" · "+text(task,"status")+" · "+text(task,"run_id"));description->setTextFormat(Qt::PlainText);description->setWordWrap(true);description->setObjectName("muted");layout->addWidget(description);
+    auto warning=new QLabel(QStringLiteral("优先查看原始 run。run.log 是执行器日志，不能替代 GalaxCore 输出。下载仅包含 Server 已采集的归档，不能保证源文件未被截断。"));warning->setObjectName("notice");warning->setWordWrap(true);layout->addWidget(warning);
+    auto split=new QSplitter;auto files=new QListWidget;files->setObjectName("logFiles");files->setMinimumWidth(165);files->setMaximumWidth(220);split->addWidget(files);
+    auto content=new QWidget;auto box=new QVBoxLayout(content);box->setContentsMargins(0,0,0,0);box->setSpacing(0);
+    auto toolbar=new QHBoxLayout;auto search=new QLineEdit;search->setPlaceholderText(QStringLiteral("查找当前片段 · 回车跳到下一处"));auto next=new QPushButton(QStringLiteral("下一段"));next->setEnabled(false);auto download=new QPushButton(QStringLiteral("下载已归档文件"));download->setEnabled(false);toolbar->addWidget(search,1);toolbar->addWidget(next);toolbar->addWidget(download);box->addLayout(toolbar);
+    auto body=new GcrpUi::NumberedLog;body->setReadOnly(true);body->setObjectName("logBody");box->addWidget(body,1);split->addWidget(content);split->setSizes({175,850});layout->addWidget(split,1);
+    auto status=new QLabel(QStringLiteral("读取当前 run_id 的归档清单…"));status->setTextFormat(Qt::PlainText);status->setWordWrap(true);status->setObjectName("muted");layout->addWidget(status);
+    connect(search,&QLineEdit::textChanged,dialog,[body](const QString& query){QList<QTextEdit::ExtraSelection> hits;if(!query.isEmpty()){QTextCursor cursor(body->document());for(int i=0;i<1000;++i){cursor=body->document()->find(query,cursor);if(cursor.isNull())break;QTextEdit::ExtraSelection hit;hit.cursor=cursor;hit.format.setBackground(QColor("#d2b25a"));hit.format.setForeground(QColor("#15243c"));hits<<hit;}}body->setExtraSelections(hits);});
+    connect(search,&QLineEdit::returnPressed,dialog,[body,search]{if(!body->find(search->text())){auto cursor=body->textCursor();cursor.movePosition(QTextCursor::Start);body->setTextCursor(cursor);body->find(search->text());}});
+    auto offset=std::make_shared<uint64_t>(0);auto reading=std::make_shared<bool>(false);auto downloading=std::make_shared<bool>(false);QPointer<QDialog> guard(dialog);
+    auto read=std::make_shared<std::function<void()>>();
+    *read=[this,guard,task,files,next,download,status,body,offset,reading,downloading,search]{
+        if(!guard||*reading||*downloading||!files->currentItem())return;const auto name=files->currentItem()->data(Qt::UserRole).toString();
+        if(demo_){const auto state=text(task,"status");QString value;
+            if(name=="evidence.run")value=QStringLiteral("# 原始 run 示例（非真实业务证据）\nGalaxCore Regression Platform · demo\nCASE=")+text(task.value("payload",Json::object()),"case")+QStringLiteral("\n[PHASE] read_edif\n[PHASE] place_design\n[PHASE] route_design\n")+(state=="FAILED"?QStringLiteral("[ERROR] route_design: example routing failure\nlast confirmed phase: route_design\n"):QStringLiteral("[INFO] route_design finished\n[PHASE] write_bitstream\n[COMPARE] PASS\n"));
+            else if(name=="result.env")value="STATUS="+QString(state=="SUCCEEDED"?"PASS":"FAIL")+"\nREASON=DEMO_ONLY\n";
+            else if(name=="flow_config")value=QString::fromStdString(task.value("payload",Json::object()).value("flow_config",Json::object()).dump(2));
+            else value=QStringLiteral("# 执行器日志示例（不是原始 run）\n[RUNNER] prepare dedicated workspace\n[RUNNER] launch GalaxCore\n[RESULT] ")+state;
+            body->setPlainText(value);status->setText(QStringLiteral("离线示例 · 与真实 Server 隔离"));download->setEnabled(false);return;
+        }
+        *reading=true;files->setEnabled(false);next->setEnabled(false);download->setEnabled(false);const auto requestOffset=*offset;
+        rpc_.request("read_log",{{"task_id",task.at("task_id")},{"run_id",task.at("run_id")},{"name",name.toStdString()},{"offset",requestOffset},{"limit",settings_.logPageBytes}},
+          [guard,files,next,download,status,body,offset,reading,name,requestOffset,search](RpcReply r){if(!guard)return;*reading=false;files->setEnabled(true);if(!r.ok){status->setText(r.error);return;}try{
+            const auto hex=r.result.at("data_hex").get<std::string>();const auto bytes=QByteArray::fromHex(QByteArray(hex.data(),int(hex.size())));const auto size=r.result.at("size").get<uint64_t>(),end=r.result.at("next_offset").get<uint64_t>();
+            if(end<requestOffset||end>size||end-requestOffset!=uint64_t(bytes.size()))throw std::runtime_error("invalid log offset");
+            *offset=end;body->setPlainText(QString::fromUtf8(bytes));search->clear();
+            status->setText(QStringLiteral("%1 · 片段 [%2, %3) / %4 字节 · %5\n仅搜索当前片段；UTF-8 边界/非法字节可能替换显示，下载保留原始归档字节").arg(name).arg(qulonglong(requestOffset)).arg(qulonglong(end)).arg(qulonglong(size)).arg(r.result.value("complete",false)?QStringLiteral("归档上传完成"):QStringLiteral("上传中 / 非完整证据")));
+            next->setEnabled(end<size);download->setEnabled(r.result.value("complete",false));
+          }catch(const std::exception& e){status->setText(QString::fromUtf8(e.what()));}});
+    };
+    connect(files,&QListWidget::currentRowChanged,dialog,[offset,reading,read,body]{*offset=0;body->clear();if(!*reading)(*read)();});
+    connect(next,&QPushButton::clicked,dialog,[read]{(*read)();});
+    connect(download,&QPushButton::clicked,dialog,[this,guard,task,files,next,download,status,reading,downloading,offset]{
+        if(*reading||*downloading||!files->currentItem()||demo_)return;const auto name=files->currentItem()->data(Qt::UserRole).toString();
+        const auto path=QFileDialog::getSaveFileName(guard,QStringLiteral("保存 Server 已归档文件（不是未采集的完整源文件）"),name);if(path.isEmpty())return;
+        auto file=std::make_shared<QSaveFile>(path);if(!file->open(QIODevice::WriteOnly)){status->setText(file->errorString());return;}
+        *downloading=true;files->setEnabled(false);next->setEnabled(false);download->setEnabled(false);auto position=std::make_shared<uint64_t>(0);auto total=std::make_shared<uint64_t>(0);
+        auto step=std::make_shared<std::function<void()>>();std::weak_ptr<std::function<void()>> weak=step;
+        *step=[this,guard,task,files,next,download,status,name,file,position,total,weak,downloading,offset]{
+            if(!guard){file->cancelWriting();return;}auto keep=weak.lock();if(!keep)return;const auto at=*position;
+            rpc_.request("read_log",{{"task_id",task.at("task_id")},{"run_id",task.at("run_id")},{"name",name.toStdString()},{"offset",at},{"limit",16384}},
+              [guard,files,next,download,status,file,position,total,keep,at,downloading,offset](RpcReply r){
+                if(!guard){file->cancelWriting();return;}
+                auto fail=[&](const QString& error){file->cancelWriting();*downloading=false;files->setEnabled(true);download->setEnabled(true);status->setText(QStringLiteral("下载失败：")+error);};
+                if(!r.ok){fail(r.error);return;}try{
+                    const auto size=r.result.at("size").get<uint64_t>(),end=r.result.at("next_offset").get<uint64_t>();const auto hex=r.result.at("data_hex").get<std::string>();const auto bytes=QByteArray::fromHex(QByteArray(hex.data(),int(hex.size())));
+                    if(!r.result.value("complete",false)||size>64*1024*1024||(at&&size!=*total)||end<at||end>size||end-at!=uint64_t(bytes.size())||(end==at&&end<size))throw std::runtime_error("archive changed, incomplete or exceeds 64 MiB download limit");
+                    if(file->write(bytes)!=bytes.size())throw std::runtime_error("cannot write destination");
+                    *total=size;*position=end;
+                    if(end<size){status->setText(QStringLiteral("下载归档 %1 / %2 字节…").arg(qulonglong(end)).arg(qulonglong(size)));(*keep)();}
+                    else{if(!file->commit())throw std::runtime_error("cannot commit destination");*downloading=false;files->setEnabled(true);next->setEnabled(*offset<size);download->setEnabled(true);status->setText(QStringLiteral("已保存 %1 字节归档。源文件是否截断请核对采集记录。").arg(qulonglong(size)));}
+                }catch(const std::exception& e){fail(QString::fromUtf8(e.what()));}
+              });
+        };(*step)();
+    });
+    dialog->show();
+    if(demo_){files->addItem(QStringLiteral("原始 run"));files->item(0)->setData(Qt::UserRole,"evidence.run");for(const auto& name:QStringList{"result.env","flow_config","run.log","stdout.log","stderr.log"}){auto item=new QListWidgetItem(name,files);item->setData(Qt::UserRole,name);}files->setCurrentRow(0);(*read)();return;}
+    rpc_.request("query_logs",{{"task_id",task.at("task_id")},{"run_id",task.at("run_id")}},[guard,files,status,read](RpcReply r){if(!guard)return;if(!r.ok){status->setText(r.error);return;}try{
+        auto items=r.result.at("items");std::stable_sort(items.begin(),items.end(),[](const Json& a,const Json& b){return (text(a,"name")=="evidence.run")>(text(b,"name")=="evidence.run");});
+        {QSignalBlocker block(files);for(const auto& file:items){const auto name=text(file,"name");auto item=new QListWidgetItem((name=="evidence.run"?QStringLiteral("原始 run"):name)+(file.value("complete",false)?"":QStringLiteral(" · 上传中")),files);item->setData(Qt::UserRole,name);item->setToolTip(name);}if(files->count())files->setCurrentRow(0);}
+        if(items.empty())status->setText(QStringLiteral("暂无归档：可能尚未上传、未采集或超过 30 天保留期；API 当前无法区分，不能据此推断失败阶段。"));else (*read)();
+    }catch(const std::exception& e){status->setText(QString::fromUtf8(e.what()));}});
+}

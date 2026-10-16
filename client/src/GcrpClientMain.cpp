@@ -6,6 +6,8 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <random>
+#include <sstream>
 using namespace GCRP;
 namespace {
 struct UsageError : std::runtime_error { using std::runtime_error::runtime_error; };
@@ -24,6 +26,8 @@ void usage() {
               << "  query TASK_ID\n  cancel TASK_ID\n"
               << "  tasks [--status STATE] [--target TARGET] [--revision REV] [--batch-id ID] [--limit N] [--before ID]\n"
               << "  workers [--machine-id NAME] [--status STATE] [--limit N] [--after JSON_CURSOR]\n"
+              << "  worker-control --machine-id NAME | --worker-id ID --action pause|resume|update\n"
+              << "                 [--scope test2|all] [--operation-id RETRY_KEY]\n"
               << "  capabilities\n  status\n"
               << "  query-batch BATCH_ID\n  cancel-batch BATCH_ID\n"
               << "  regression --revision REV | --case PATH/run.tcl | --batch-id ID\n"
@@ -46,6 +50,7 @@ int main(int argc, char** argv) {
         std::string from_revision, to_revision, before_revision;
         std::string status_filter, machine_filter, after_cursor;
         std::string run_id, log_name;
+        std::string control_worker,control_action,control_scope,control_id;
         int port = Config::instance().getInt("server.port", 0);
         int timeout = Config::instance().getInt("network.timeout_ms", 0);
         int priority = 0, case_timeout = 0, limit = 0;
@@ -82,6 +87,10 @@ int main(int argc, char** argv) {
                 else if (arg == "--run-id") run_id = value;
                 else if (arg == "--name") log_name = value;
                 else if (arg == "--offset") log_offset = number<uint64_t>(value);
+                else if (arg == "--worker-id") control_worker=value;
+                else if (arg == "--action") control_action=value;
+                else if (arg == "--scope") control_scope=value;
+                else if (arg == "--operation-id") control_id=value;
                 else throw UsageError("unknown option: " + arg);
             } else if (command.empty()) command = arg;
             else if (id.empty()) id = arg;
@@ -95,10 +104,26 @@ int main(int argc, char** argv) {
         if (priority < -100 || priority > 100) throw UsageError("priority out of range");
         GcrpClient client(host, static_cast<uint16_t>(port), timeout);
         Protocol::ProtocolMessage response;
-        if (command != "tasks" && command != "workers" &&
+        if(command!="worker-control"&&(seen.count("--worker-id")||seen.count("--action")||seen.count("--scope")||seen.count("--operation-id")))
+            throw UsageError("management options require worker-control");
+        if (command != "tasks" && command != "workers" && command!="worker-control" &&
             (seen.count("--status") || seen.count("--machine-id") || seen.count("--after")))
             throw UsageError("list filters require tasks or workers");
-        if (command == "tasks" || command == "workers" || command == "capabilities" || command == "status") {
+        if(command=="worker-control"){
+            const std::set<std::string> allowed{"--host","--port","--timeout-ms","--machine-id","--worker-id","--action","--scope","--operation-id"};
+            for(const auto& option:seen)if(!allowed.count(option))throw UsageError("unsupported management option");
+            if(!id.empty()||machine_filter.empty()==control_worker.empty()||
+               (control_action!="pause"&&control_action!="resume"&&control_action!="update"))
+                throw UsageError("worker-control needs exactly one target and pause/resume/update action");
+            if(control_action=="update"?(control_scope!="test2"&&control_scope!="all"):seen.count("--scope")!=0)
+                throw UsageError("update needs --scope test2|all; other actions have no scope");
+            if(control_id.empty()) {std::random_device random;std::ostringstream value;value<<std::hex;
+                for(int i=0;i<4;++i)value<<random();control_id=value.str();}
+            nlohmann::json data={{machine_filter.empty()?"worker_id":"machine_id",machine_filter.empty()?control_worker:machine_filter},
+                {"action",control_action},{"operation_id",control_id}};
+            if(control_action=="update")data["scope"]=control_scope;
+            response=client.request(Protocol::MessageType::CONTROL_WORKERS,data);
+        }else if (command == "tasks" || command == "workers" || command == "capabilities" || command == "status") {
             std::set<std::string> allowed{"--host", "--port", "--timeout-ms"};
             if (command == "tasks") allowed.insert({"--status", "--target", "--revision", "--batch-id", "--limit", "--before"});
             if (command == "workers") allowed.insert({"--status", "--machine-id", "--limit", "--after"});

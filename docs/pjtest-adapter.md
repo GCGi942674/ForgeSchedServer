@@ -1,12 +1,14 @@
-# PJtest Adapter — 单 slot 接入
+# PJtest Adapter — 执行契约
 
-当前仅单 Worker、单 slot、单 case。真实 GalaxCore/Vivado 仍须内网验收。
-未实现 SQLite、自动恢复或远程取消。ASSIGNED/RUNNING 取消仍被拒绝。
+每个 slot 独立执行单个 case；多 slot 管理由 Worker Manager 负责。
+平台已包含 SQLite 和恢复机制，详见对应阶段文档；本文仅说明 Adapter 契约。
+取消只停止尚未执行的 case，不终止 ASSIGNED/RUNNING 的真实进程。
 
 ## 启动配置
 
 生产模式直接读取共享配置；演示必须显式 `--demo`，且拒绝业务 payload。
-Server、CLI、Worker 共用 `config/gcrp.conf`。多机部署时可用
+Server/CLI 使用 `config/server.conf`，Worker 使用 `config/worker.conf`；
+旧单文件 `config/gcrp.conf` 仍兼容。多机部署时可用
 `GCRP_CONFIG` 指向每台机器自己的配置副本：
 `server.bind_ip` 是监听地址，`network.server_ip` 是 Client/Worker 连接地址，
 `server.port` 为同一个端口。默认只监听本机；不要在无认证/TLS 的情况下开放公网。

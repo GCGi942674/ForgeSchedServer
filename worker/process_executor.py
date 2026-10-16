@@ -18,6 +18,7 @@ class ProcessExecutor:
         self.safe = True
         self.heartbeat = heartbeat or (lambda: None)
         self.before_launch = None
+        self.events_stderr = False
 
     def stop(self, grace=0):
         if self.lease is not None:
@@ -49,6 +50,7 @@ class ProcessExecutor:
                  '--lease', str(read_fd), '--timeout', str(timeout), '--grace', str(grace),
                  '--completion', str(completion_write),
                  *(['--receipt', str(receipt)] if receipt else []),
+                 *(['--events-stderr'] if self.events_stderr else []),
                  '--', *map(str, argv)], cwd=str(cwd), env=env, stdout=stdout,
                 stderr=stderr, start_new_session=True, pass_fds=(read_fd, completion_write))
         except BaseException:

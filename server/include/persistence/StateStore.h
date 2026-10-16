@@ -6,6 +6,7 @@
 #include <utility>
 #include <string>
 #include <vector>
+#include <mutex>
 
 struct sqlite3;
 
@@ -25,6 +26,8 @@ public:
 
     std::vector<PersistedTask> loadTasks() const;
     std::vector<std::string> loadStoppedBatches() const;
+    nlohmann::json loadWorkerControls() const;
+    void saveWorkerControls(const nlohmann::json&);
     std::optional<std::pair<TaskId, std::string>> findSubmission(const std::string& key) const;
     std::optional<std::string> recoveryDecision(const std::string& run_id,
                                                TaskId task_id, const std::string& worker_id) const;
@@ -38,6 +41,7 @@ public:
               const std::optional<std::pair<std::string, std::string>>& recovery = std::nullopt);
 
 private:
+    mutable std::mutex mutex_;
     sqlite3* db_{nullptr};
     int lock_fd_{-1};
     void exec(const char* sql) const;

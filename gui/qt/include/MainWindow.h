@@ -15,6 +15,7 @@
 #include <QPushButton>
 #include <QElapsedTimer>
 #include <QListWidget>
+#include <QCheckBox>
 #include <memory>
 
 struct GuiSettings {
@@ -27,6 +28,9 @@ class MainWindow : public QMainWindow {
 public:
     MainWindow(GuiSettings settings, bool demo);
     bool selfTest();
+    bool catalogProbe() const;
+    bool snapshotProbe() const;
+    bool saveReview(const QString& directory);
 private:
     GuiSettings settings_;
     bool demo_{false}, loading_{false}, submitting_{false};
@@ -35,6 +39,11 @@ private:
     QSet<QString> operations_;
     QStackedWidget* pages_{};
     QLabel* connection_{};
+    QLabel *breadcrumb_{}, *navCount_{}, *hostTitle_{}, *flowSummary_{};
+    QList<QLabel*> taskMetrics_;
+    QComboBox* taskSource_{};
+    int taskPage_{0};
+    QPushButton *taskPrev_{}, *taskNext_{};
     QLabel* freshness_{};
     bool workersStale_{true}, tasksStale_{true};
     QElapsedTimer workerUpdated_, taskUpdated_;
@@ -42,8 +51,16 @@ private:
     QLabel* selection_{};
     QComboBox* machines_{};
     QListWidget* hostsList_{};
+    QList<QPushButton*> hostControlButtons_;
+    bool managementPending_{false};
+    QCheckBox* showOffline_{};
+    QLabel *workerSummary_{}, *catalogStatus_{};
+    bool catalogLoading_{false};
     QLineEdit* caseSearch_{};
     QTreeWidget* tasksTree_{};
+    QLineEdit* taskSearch_{};
+    QComboBox* taskStatus_{};
+    QLabel* taskSummary_{};
     QTreeWidget* casesTree_{};
     QTreeWidget* flowOptions_{};
     QTableWidget* slotsTable_{};
@@ -75,10 +92,15 @@ private:
     void refresh();
     void fetchList(const std::string& type, const Json& filter, const Json& cursor,
                    std::shared_ptr<Json> rows, std::string instance,
-                   std::function<void(bool,Json,QString)> done, int page = 0);
+                   std::function<void(bool,Json,QString)> done, int page = 0, uint64_t generation = 0);
     void showWorkers();
+    void controlWorkers(bool machine, const QString& target, const QString& action);
     void showTasks();
+    void filterTasks();
     void loadCatalog();
+    void applyCatalog();
+    void loadServerCatalog(uint64_t offset=0, uint64_t generation=0,
+                           std::shared_ptr<Json> result=nullptr, std::string instance={}, bool force=false);
     void resetFlowOptions();
     void filterCases();
     Json selectedFlowConfig() const;
@@ -86,6 +108,7 @@ private:
     void submitNext();
     void cancelSelection();
     void openTask(uint64_t id);
+    void openBatch(const QString& batch);
     void openLogs(const Json& task);
     void compareDemoDates();
     void queryDaily(bool next=false);

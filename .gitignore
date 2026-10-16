@@ -10,7 +10,7 @@ __pycache__/
 *.pyc
 workers_slots/
 /worker-output/
-/data/run-logs/
+/data/
 
 # Private deployment settings and runtime database files
 /config/server.conf

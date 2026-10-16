@@ -26,10 +26,15 @@ int main() { return testMain([] {
     };
     const auto empty = nlohmann::json::object();
     CHECK(route("query_capabilities", empty)["result"]["features"]["remote_cancel"] == false);
+    CHECK(route("query_catalog",empty)["code"]==0);
+    CHECK(route("query_catalog",{{"path","/etc"}})["code"]==1);
     CHECK(route("query_tasks", empty)["result"]["items"].empty());
     for (int i = 0; i < 3; ++i)
         CHECK(route("submit_task", {{"task_type", "REGRESSION"}, {"target", "device"}, {"revision", "123"}})["code"] == 0);
     auto page = route("query_tasks", {{"limit", 1}})["result"];
+    CHECK(page["items"][0]["created_at_ms"].is_number_integer());
+    CHECK(page["items"][0]["payload"].is_object());
+    CHECK(page["items"][0]["execution"].is_object());
     CHECK(page["total"] == 3); CHECK(page["has_more"] == true);
     auto next = route("query_tasks", {{"before_task_id", page["next_before_task_id"]}, {"limit", 1}})["result"];
     CHECK(next["items"][0]["task_id"] < page["items"][0]["task_id"]);
@@ -51,6 +56,8 @@ int main() { return testMain([] {
     CHECK(workers.markOffline("host-slot1")); CHECK(workers.markDraining("host-slot2"));
     page = route("query_workers", {{"limit", 1}})["result"];
     CHECK(page["total"] == 2); CHECK(page["items"][0]["status"] == "OFFLINE");
+    CHECK(page["items"][0]["accepting_tasks"]==false);
+    CHECK(page["items"][0]["accepting_requested"]==true);
     next = route("query_workers", {{"after", page["next_after"]}})["result"];
     CHECK(next["items"].size() == 1); CHECK(next["items"][0]["status"] == "DRAINING");
     CHECK(next["next_after"].is_null());
@@ -59,4 +66,17 @@ int main() { return testMain([] {
     CHECK(route("query_workers", {{"machine_id", "other"}})["result"]["total"] == 0);
     CHECK(route("query_workers", {{"after", {{"slot_id", "slot1"}}}})["code"] == 1);
     CHECK(route("query_capabilities", {{"extra", true}})["code"] == 1);
+    Task fixture(987,TaskType::REGRESSION,"device","19037");
+    nlohmann::json payload={{"case","family/device/example/run.tcl"},{"flow","route"},
+        {"flow_config",{{"route_design",1}}},{"context",{{"name","manual review"},{"source","manual"},{"template","route"}}}};
+    fixture.setPayload(payload);nlohmann::json execution={{"case_status","FAIL"},{"reason","phase error"},{"exit_code",1}};fixture.setExecutionSummary(execution);
+    auto summary=Api::taskListSummary(fixture);
+    CHECK(summary["payload"]["case"]==payload["case"]);
+    CHECK(summary["payload"]["context"]["source"]=="manual");
+    CHECK(summary["execution"]["exit_code"]==1);
+    CHECK(!summary["payload"].contains("flow_config"));CHECK(fixture.getPayload()==payload);
+    payload["case"]=std::string(4096,'\n');fixture.setPayload(payload);summary=Api::taskListSummary(fixture);
+    CHECK(summary.dump().size()<=8192);CHECK(summary["summary_truncated"]==true);
+    payload["case"]=std::string(5000,'x');fixture.setPayload(payload);summary=Api::taskListSummary(fixture);
+    CHECK(!summary["payload"].contains("case"));CHECK(summary["summary_truncated"]==true);
 }); }

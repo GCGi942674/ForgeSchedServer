@@ -13,6 +13,7 @@
 #include "protocol/dto/Response.h"
 #include "regression/RegressionService.h"
 #include "log/RunLogArchive.h"
+#include "protocol/GuiCatalog.h"
 
 namespace GCRP {
 
@@ -62,6 +63,7 @@ private:
     SchedulingDriver& scheduling_driver_;
     RegressionService regression_service_;
     RunLogArchive log_archive_;
+    GuiCatalog gui_catalog_;
 };
 
 } // namespace GCRP::Protocol

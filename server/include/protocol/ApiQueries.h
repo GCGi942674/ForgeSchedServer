@@ -36,6 +36,29 @@ inline size_t limit(const Json& q) {
     if (n > 50) throw std::invalid_argument("limit exceeds 50");
     return static_cast<size_t>(n);
 }
+// Bounded list DTO, not the full task payload/flow snapshot. Keeps a 50-row
+// response below the 1 MiB frame limit even with highly escaped text.
+inline Json taskListSummary(const Task& task) {
+    Json payload=Json::object(),execution=Json::object(),context=Json::object();bool truncated=false;
+    auto copy=[&truncated](const Json& from,Json& to,const char* key,size_t max){
+        if(!from.is_object()||!from.contains(key))return;
+        const auto& value=from[key];
+        if(value.is_string()) { if(value.get_ref<const std::string&>().size()<=max)to[key]=value;else truncated=true; }
+        else if(value.is_number_integer())to[key]=value;
+    };
+    const auto& full=task.getPayload();copy(full,payload,"case",4096);copy(full,payload,"flow",128);
+    if(full.is_object()&&full.contains("context")){
+        for(const char* key:{"batch_id","name","template","source","date","suite"})copy(full["context"],context,key,256);
+    }
+    payload["context"]=std::move(context);
+    for(const char* key:{"case_status","case_reason","reason","exit_code","raw_exit_code"})copy(task.getExecutionSummary(),execution,key,256);
+    const auto milliseconds=[](const auto& time){return std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count();};
+    Json result={{"created_at_ms",milliseconds(task.getCreatedAt())},{"payload",std::move(payload)},{"execution",std::move(execution)}};
+    if(task.getStartedAt().time_since_epoch().count()>0)result["started_at_ms"]=milliseconds(task.getStartedAt());
+    if(task.getFinishedAt().time_since_epoch().count()>0)result["finished_at_ms"]=milliseconds(task.getFinishedAt());
+    if(result.dump().size()>8192){result["payload"]=Json::object();result["execution"]=Json::object();truncated=true;}
+    result["summary_truncated"]=truncated;return result;
+}
 inline Json tasks(const Json& q, const Scheduler& scheduler) {
     validate(q, {"status", "target", "revision", "batch_id", "limit", "before_task_id"});
     const auto count = limit(q);
@@ -69,6 +92,8 @@ inline Json tasks(const Json& q, const Scheduler& scheduler) {
             {"revision", t.getRevision()}, {"batch_id", task_batch},
             {"worker_id", t.getWorkerId()}, {"run_id", t.getRunId()},
             {"priority", t.getPriority()}, {"retry_count", t.getRetryCount()}});
+        const auto summary=taskListSummary(t);
+        for(auto it=summary.begin();it!=summary.end();++it)items.back()[it.key()]=it.value();
     }
     return {{"items", items}, {"total", total}, {"has_more", more},
         {"next_before_task_id", more ? items.back()["task_id"] : Json(nullptr)},
@@ -103,6 +128,10 @@ inline Json workers(const Json& q, const WorkerManager& manager) {
             {"slot_id", w.getSlotId()}, {"hostname", w.getHostname()},
             {"status", toString(w.getStatus())}, {"capacity", w.getTotalSlots()},
             {"used", w.getUsedSlots()}, {"free", w.freeSlots()},
+            {"accepting_tasks",w.getStatus()==WorkerStatus::ONLINE&&w.acceptsTasks()}, {"accepting_requested",w.getControl().accepting},
+            {"control_supported",w.supportsControl()},
+            {"maintenance",{{"operation_id",w.getControl().operation_id},{"scope",w.getControl().scope},
+                {"state",w.getControl().state},{"error",w.getControl().error}}},
             {"last_heartbeat_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
                 w.getLastHeartbeat().time_since_epoch()).count()}});
     }
@@ -120,10 +149,12 @@ inline Json capabilities(const Json& q) {
     return {{"api_version", 1}, {"protocol_version", 1},
         {"operations", {"submit_task", "query_task", "query_tasks", "query_workers", "query_status",
             "query_capabilities", "cancel_task", "query_batch", "cancel_batch", "query_regression",
-            "query_progress", "query_rollback"}},
+            "query_progress", "query_rollback", "control_workers", "query_catalog"}},
         {"limits", {{"page_size", 50}, {"progress_page_size", 20}, {"frame_bytes", 1048576}}},
         {"features", {{"remote_cancel", false}, {"cancel_queued", true},
             {"worker_inventory_persistent", false}, {"authentication", false},
+            {"worker_controls_persistent",true}, {"worker_maintenance_v1",true},
+            {"record_deletion",false},
             {"cross_page_snapshot", false}, {"project_scope", false}}}};
 }
 } // namespace GCRP::Api

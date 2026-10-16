@@ -11,6 +11,7 @@ from pathlib import Path
 import select
 import signal
 import subprocess
+import sys
 import time
 from recovery_journal import write_json
 
@@ -40,6 +41,7 @@ def main():
     parser.add_argument('--timeout', type=float, required=True)
     parser.add_argument('--grace', type=float, required=True)
     parser.add_argument('--receipt')
+    parser.add_argument('--events-stderr', action='store_true')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
@@ -51,7 +53,8 @@ def main():
     child = subprocess.Popen(command, start_new_session=True, close_fds=True)
     try:
         print(json.dumps(dict(event="execution_started", supervisor_pid=os.getpid(),
-                              command_pid=child.pid, argv=command)), flush=True)
+                              command_pid=child.pid, argv=command)),
+              file=sys.stderr if args.events_stderr else sys.stdout, flush=True)
     except OSError:
         stopping[0] = True
     deadline = time.monotonic() + args.timeout

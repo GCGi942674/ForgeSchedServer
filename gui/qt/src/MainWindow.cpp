@@ -1,110 +1,34 @@
-#include "MainWindow.h"
-#include "Theme.h"
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <QFormLayout>
-#include <QSplitter>
-#include <QGroupBox>
-#include <QHeaderView>
-#include <QFile>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QPlainTextEdit>
-#include <QPointer>
-#include <QSignalBlocker>
-#include <QTreeWidgetItemIterator>
-#include <QUuid>
-#include <QDateTime>
-#include <algorithm>
-
-namespace {
-QString text(const Json& row, const char* key) {
-    if (!row.is_object() || !row.contains(key) || row[key].is_null()) return QStringLiteral("—");
-    const auto value = row[key].is_string() ? row[key].get<std::string>() : row[key].dump();
-    return QString::fromStdString(value);
-}
-QWidget* page(const QString& title, const QString& subtitle) {
-    auto widget = new QWidget;
-    auto layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(24,20,24,20); layout->setSpacing(14);
-    auto label = new QLabel(title); label->setObjectName("pageTitle");
-    layout->addWidget(label);
-    auto description = new QLabel(subtitle); description->setWordWrap(true);
-    description->setObjectName("muted"); layout->addWidget(description);
-    return widget;
-}
-QTableWidget* table(const QStringList& headers) {
-    auto widget = new QTableWidget(0, headers.size());
-    widget->setHorizontalHeaderLabels(headers);
-    widget->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    widget->setSelectionBehavior(QAbstractItemView::SelectRows);
-    widget->setSelectionMode(QAbstractItemView::SingleSelection);
-    widget->setAlternatingRowColors(true);
-    widget->verticalHeader()->hide(); widget->verticalHeader()->setDefaultSectionSize(52);
-    widget->setShowGrid(false); widget->setMouseTracking(true);
-    widget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    return widget;
-}
-void cell(QTableWidget* table, int row, int column, const QString& value) {
-    auto item = new QTableWidgetItem(value);
-    if(value.startsWith("ONLINE")||value=="PASS"||value==QStringLiteral("新通过"))item->setForeground(QColor("#287a61"));
-    else if(value=="FAIL"||value=="FAILED"||value==QStringLiteral("新回退"))item->setForeground(QColor("#b44058"));
-    else if(value=="TIMEOUT"||value=="DRAINING")item->setForeground(QColor("#987022"));
-    else if(value=="OFFLINE")item->setForeground(QColor("#8795aa"));
-    table->setItem(row,column,item);
-}
-QStringList selectedCases(QTreeWidget* tree) {
-    QStringList paths;
-    for (QTreeWidgetItemIterator it(tree); *it; ++it) {
-        const auto path = (*it)->data(0,Qt::UserRole).toString();
-        if (!path.isEmpty() && (*it)->checkState(0) == Qt::Checked) paths.append(path);
-    }
-    return paths;
-}
-QPushButton* pendingButton(const QString& label) {
-    auto button = new QPushButton(label+QStringLiteral(" · 待接入"));
-    button->setEnabled(false);
-    button->setToolTip(QStringLiteral("当前 Server 没有对应 Client API"));
-    return button;
-}
-Json exampleCatalog() {
-    Json result = {{"cases",{"kintexuplus/xcku3p-ffvd900-1-i/convergentRoundingEven/run.tcl",
-                      "kintexuplus/xcku3p-ffvd900-1-i/shiftRegister/run.tcl",
-                      "virtexuplus/xcvu9p-flga2104-2-i/fifoSync/run.tcl"}},
-                  {"revisions",{"19008","18962","18954"}}};
-    result["templates"]["route"]["flow_config"] = {{"route_design",1},{"write_bitstream",1},
-                                                  {"bit_cmp",1},{"msk_cmp",1},{"bgn_cmp",1}};
-    return result;
-}
-}
+#include "ConsoleSupport.h"
 
 MainWindow::MainWindow(GuiSettings settings, bool demo)
     : settings_(std::move(settings)), demo_(demo), rpc_(this) {
-    setWindowTitle(QStringLiteral("GalaxCore Regression Platform 调度控制台")); resize(1280,820);
-    setMinimumSize(900,600);
+    setWindowTitle(QStringLiteral("GalaxCore Regression Platform 调度控制台 · UI v3")+
+        (demo_?QStringLiteral("【离线演示 · 非真实工作机】"):QStringLiteral(" · ")+settings_.host+":"+QString::number(settings_.port))); resize(1280,820);
+    setMinimumSize(1100,720);
     auto central = new QWidget; central->setObjectName("surface"); setCentralWidget(central);
     auto shell = new QHBoxLayout(central); shell->setContentsMargins(0,0,0,0); shell->setSpacing(0);
-    auto side = new QWidget; side->setObjectName("sidebar"); side->setFixedWidth(208);
-    auto sideLayout = new QVBoxLayout(side); sideLayout->setContentsMargins(16,26,16,20);
+    auto side = new QWidget; side->setObjectName("sidebar"); side->setFixedWidth(196);
+    auto sideLayout = new QVBoxLayout(side); sideLayout->setContentsMargins(16,28,16,22);
     auto brand = new QLabel(QStringLiteral("GCRP")); brand->setObjectName("brand");
     auto brandRow = new QHBoxLayout; auto badge = new QLabel("G");
-    badge->setObjectName("brandBadge"); badge->setFixedSize(32,32); badge->setAlignment(Qt::AlignCenter);
+    badge->setObjectName("brandBadge"); badge->setFixedSize(40,42); badge->setAlignment(Qt::AlignCenter);
     brandRow->addWidget(badge); brandRow->addWidget(brand,1); sideLayout->addLayout(brandRow);
-    auto caption = new QLabel(QStringLiteral("调度控制台")); caption->setObjectName("muted"); sideLayout->addWidget(caption);
-    sideLayout->addSpacing(22); pages_ = new QStackedWidget;
+    auto caption = new QLabel(QStringLiteral("Regression Platform")); caption->setWordWrap(true);caption->setObjectName("muted"); sideLayout->addWidget(caption);
+    auto section=new QLabel(QStringLiteral("控制台"));section->setObjectName("navCaption");sideLayout->addSpacing(20);sideLayout->addWidget(section); pages_ = new QStackedWidget;
     auto transition = GcrpUi::pageTransition(pages_,this);
     const QStringList labels{QStringLiteral("工作机状态"),QStringLiteral("任务管理"),
                              QStringLiteral("添加任务"),QStringLiteral("每日回归")};
     for (int i=0;i<labels.size();++i) {
         auto button = new QPushButton(labels[i]); button->setCheckable(true);
         button->setObjectName("navigation"); button->setIcon(GcrpUi::navigationIcon(i));
-        button->setIconSize(QSize(20,20)); sideLayout->addWidget(button);
+        button->setIconSize(QSize(18,18)); sideLayout->addWidget(button);
+        if(i==1){navCount_=new QLabel(button);navCount_->setObjectName("navCount");navCount_->setAlignment(Qt::AlignCenter);navCount_->setGeometry(130,12,22,20);}
         connect(button,&QPushButton::clicked,this,[this,side,i,transition]{
             if(pages_->currentIndex()!=i){transition->capture();pages_->setCurrentIndex(i);transition->start();}
             for (auto b:side->findChildren<QPushButton*>()) b->setChecked(false);
             side->findChildren<QPushButton*>()[i]->setChecked(true);
+            const QStringList titles{QStringLiteral("工作机状态"),QStringLiteral("任务管理"),QStringLiteral("添加任务"),QStringLiteral("每日回归")};
+            breadcrumb_->setText(QStringLiteral("工作空间　 /　 ")+titles[i]);
         });
         if (i==0) button->setChecked(true);
     }
@@ -114,11 +38,15 @@ MainWindow::MainWindow(GuiSettings settings, bool demo)
     footer->setObjectName("sidebarFooter"); footer->setWordWrap(true); sideLayout->addWidget(footer); shell->addWidget(side);
     auto body = new QWidget; body->setObjectName("workspace"); auto bodyLayout = new QVBoxLayout(body);
     bodyLayout->setContentsMargins(0,0,0,0);
-    auto bar = new QHBoxLayout; bar->setContentsMargins(22,12,22,5);
-    connection_ = new QLabel; connection_->setTextFormat(Qt::PlainText); connection_->setWordWrap(true); bar->addWidget(connection_,1);
-    auto refresh = new QPushButton(QStringLiteral("刷新")); bar->addWidget(refresh);
-    connect(refresh,&QPushButton::clicked,this,[this]{this->refresh();});
-    bodyLayout->addLayout(bar);
+    auto top=new QWidget;top->setObjectName("topbar");top->setFixedHeight(74);
+    auto bar=new QHBoxLayout(top);bar->setContentsMargins(28,12,28,12);
+    breadcrumb_=new QLabel(QStringLiteral("工作空间　 /　 任务管理"));breadcrumb_->setObjectName("breadcrumb");bar->addWidget(breadcrumb_);
+    bar->addStretch();connection_=new QLabel;connection_->setObjectName("connection");connection_->setTextFormat(Qt::PlainText);
+    connection_->setMaximumWidth(360);connection_->setWordWrap(true);bar->addWidget(connection_);
+    auto refresh=new QPushButton(QStringLiteral("刷新快照"));bar->addWidget(refresh);
+    auto role=new QPushButton(QStringLiteral("删除未启用"));role->setEnabled(false);role->setToolTip(QStringLiteral("待服务端接入管理员认证后开放"));bar->addWidget(role);
+    connect(refresh,&QPushButton::clicked,this,[this]{this->refresh();});bodyLayout->addWidget(top);
+    if(demo_){auto demoBanner=new QLabel(QStringLiteral("交互评审模式　 ·　 示例数据与真实 Server 完全隔离，不发送任何任务"));demoBanner->setObjectName("demoBanner");bodyLayout->addWidget(demoBanner);}
     freshness_=new QLabel;freshness_->setWordWrap(true);
     freshness_->setStyleSheet("color:#ad3442;padding:0px 22px 6px;");
     bodyLayout->addWidget(freshness_);
@@ -126,27 +54,39 @@ MainWindow::MainWindow(GuiSettings settings, bool demo)
     pages_->addWidget(addPage()); pages_->addWidget(regressionPage());
     bodyLayout->addWidget(pages_,1); shell->addWidget(body,1);
     setStyleSheet(GcrpUi::styleSheet());
+    new GcrpUi::InteractionFeedback(this);
+    pages_->setCurrentIndex(1);
+    const auto navigation=side->findChildren<QPushButton*>();for(int i=0;i<navigation.size();++i)navigation[i]->setChecked(i==1);
     for(auto button:findChildren<QPushButton*>())button->setCursor(button->isEnabled()?Qt::PointingHandCursor:Qt::ArrowCursor);
     if (demo_) {
         freshness_->hide();
-        for (const auto& machine: {"novarch4","novarch3","tiger"})
-            for (int i=1;i<=(std::string(machine)=="novarch4"?5:3);++i)
-                workers_.push_back({{"machine_id",machine},{"worker_id",std::string(machine)+"-slot"+std::to_string(i)},
-                    {"slot_id","slot"+std::to_string(i)},{"status",std::string(machine)=="tiger"?"OFFLINE":"ONLINE"},
-                    {"used",i==1?1:0},{"capacity",1},{"free",i==1?0:1}});
-        tasks_={{{"task_id",1042},{"status","RUNNING"},{"target","xcku3p-ffvd900-1-i"},
-                 {"revision","19008"},{"worker_id","novarch4-slot1"},{"batch_id","gui-demo"},{"run_id","demo-run"}},
-                {{"task_id",1043},{"status","QUEUED"},{"target","xcku3p-ffvd900-1-i"},
-                 {"revision","19008"},{"worker_id",""},{"batch_id","gui-demo"},{"run_id",""}}};
+        for(const auto& machine:{"novarch4","novarch3","tiger"})
+            for(int i=1;i<=(std::string(machine)=="novarch4"?1:std::string(machine)=="novarch3"?3:2);++i)
+                workers_.push_back({{"machine_id",machine},{"worker_id",std::string(machine)+"-slot"+std::to_string(i)},{"slot_id","slot"+std::to_string(i)},{"status",std::string(machine)=="tiger"?"OFFLINE":"ONLINE"},{"used",i==1&&std::string(machine)!="tiger"?1:0},{"capacity",1},{"free",i==1&&std::string(machine)!="tiger"?0:1},{"control_supported",true},{"accepting_tasks",true}});
+        for(int batch=0;batch<7;++batch)for(int i=0;i<(batch==0?78:batch==1?35:12);++i){
+            const auto status=batch==0?(i<63?"SUCCEEDED":i<75?"FAILED":"TIMEOUT"):batch==1?(i<5?"RUNNING":"QUEUED"):batch==2?(i<4?"CANCELLED":"SUCCEEDED"):"SUCCEEDED";
+            const auto path=QStringLiteral("kintexuplus/xcku3p-ffvd900-1-i/%1/run.tcl").arg(i==0?QStringLiteral("convergentRoundingEven"):QStringLiteral("case_%1").arg(i+1,3,10,QChar('0')));
+            const auto batchId="demo-batch-"+std::to_string(batch+1);const std::string flow=batch%2?"route_design":"place_design";
+            tasks_.push_back({{"task_id",uint64_t(1000+batch*100+i)},{"status",status},{"target","xcku3p-ffvd900-1-i"},{"revision",batch<4?"19037":"19036"},
+                {"worker_id",std::string(status)=="QUEUED"?"":i%2?"novarch3-slot1":"novarch4-slot1"},{"batch_id",batchId},{"run_id","demo-run-"+std::to_string(batch*100+i)},
+                {"created_at_ms",int64_t(1792033500000)-batch*900000},
+                {"payload",{{"case",path.toStdString()},{"flow",flow},{"flow_config",{{"route_design",1},{"write_bitstream",1},{"bit_cmp",1}}},
+                    {"context",{{"batch_id",batchId},{"name",batch==0?"每日回归 · Place":batch==1?"人工验证 · Route":"每日回归批次 "+std::to_string(batch+1)},{"source",batch==1?"manual":"scheduled"},{"template",flow}}}}},
+                {"execution",{{"case_status",std::string(status)=="FAILED"?"FAIL":"PASS"},{"reason",std::string(status)=="FAILED"?"example routing failure":"pass"},{"case_reason",std::string(status)=="FAILED"?"DEMO_FAIL":"COMPARE_ARTIFACTS_PASS"}}}});
+        }
         catalog_=exampleCatalog(); loadCatalog(); showWorkers(); machines_->setCurrentText("novarch4"); showTasks();
         note(QStringLiteral("演示模式：所有数据和操作均为本地示例"));
     } else {
-        rpc_.configure(settings_.host,settings_.port,settings_.timeout); loadCatalog();
+        rpc_.configure(settings_.host,settings_.port,settings_.timeout);
         rpc_.request("query_capabilities",Json::object(),[this](RpcReply r){
             if (!r.ok) { note(r.error,true); return; }
             for (const auto& op:r.result.value("operations",Json::array()))
                 if (op.is_string()) operations_.insert(QString::fromStdString(op.get<std::string>()));
-            submit_->setEnabled(!catalog_.is_null() && operations_.contains("submit_task"));
+            if(operations_.contains("query_catalog"))loadServerCatalog();
+            else {
+                loadCatalog();
+                if(catalog_.is_null())catalogStatus_->setText(QStringLiteral("Server 版本不支持自动目录查询，请更新 Server；旧版可手动导入目录清单。"));
+            }
             this->refresh();
         });
         connect(&freshnessTimer_,&QTimer::timeout,this,[this]{
@@ -160,154 +100,38 @@ MainWindow::MainWindow(GuiSettings settings, bool demo)
         note(QStringLiteral("正在连接 Server…"));
     }
 }
-QWidget* MainWindow::workersPage() {
-    auto widget=page(QStringLiteral("工作机状态"),QStringLiteral("按主机查看子 slots；ONLINE 与忙碌/空闲分开显示。"));
-    auto layout=qobject_cast<QVBoxLayout*>(widget->layout());
-    auto bar=new QHBoxLayout; machines_=new QComboBox(widget); machines_->hide();
-    bar->addWidget(pendingButton(QStringLiteral("整机上线"))); bar->addWidget(pendingButton(QStringLiteral("整机下线")));
-    layout->addLayout(bar); slotsTable_=table({"slot","Worker ID","连接状态","占用 / 容量","当前任务"});
-    auto split=new QSplitter;
-    hostsList_=new QListWidget;hostsList_->setMinimumWidth(180);
-    hostsList_->setMaximumWidth(300);split->addWidget(GcrpUi::card(hostsList_));
-    split->addWidget(GcrpUi::card(slotsTable_));split->setStretchFactor(1,1);
-    layout->addWidget(split,1);
-    connect(hostsList_,&QListWidget::currentTextChanged,this,[this](const QString& name){
-        if(!name.isEmpty())machines_->setCurrentText(name);
-    });
-    auto hint=new QLabel(QStringLiteral("主机列表来自自动注册信息。远程上下线尚未接入；下线应允许当前 testcase 跑完。"));
-    hint->setWordWrap(true); layout->addWidget(hint);
-    connect(machines_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this]{showWorkers();});
-    connect(slotsTable_,&QTableWidget::cellDoubleClicked,this,[this](int row,int){
-        if (auto item=slotsTable_->item(row,4)) {
-            bool ok=false; auto id=item->data(Qt::UserRole).toString().toULongLong(&ok);
-            if (ok) openTask(id);
-        }
-    }); return widget;
-}
-QWidget* MainWindow::tasksPage() {
-    auto widget=page(QStringLiteral("任务管理"),QStringLiteral("按 batch_id 分组；双击任务查看参数和成功、失败的归档日志。"));
-    auto layout=qobject_cast<QVBoxLayout*>(widget->layout());
-    auto actions=new QHBoxLayout;
-    auto cancel=new QPushButton(QStringLiteral("取消未执行任务 / 批次")); cancel->setProperty("kind","danger"); actions->addWidget(cancel);
-    actions->addWidget(pendingButton(QStringLiteral("删除记录"))); actions->addStretch();
-    auto details=new QPushButton(QStringLiteral("查看任务 / 日志"));details->setProperty("kind","primary"); actions->addWidget(details);layout->addLayout(actions);
-    tasksTree_=new QTreeWidget;
-    tasksTree_->setHeaderLabels({"批次 / Testcase","状态","目标 / 模板","版本","工作机","PASS","FAIL","TIMEOUT","CRASH / ERROR","运行 / 排队","完成 / 总数","通过率"});
-    tasksTree_->setRootIsDecorated(true);tasksTree_->setAlternatingRowColors(true);tasksTree_->setMouseTracking(true);tasksTree_->setIndentation(24);
-    tasksTree_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    tasksTree_->header()->setStretchLastSection(true);layout->addWidget(GcrpUi::card(tasksTree_),1);
-    connect(cancel,&QPushButton::clicked,this,[this]{cancelSelection();});
-    auto open=[this]{auto item=tasksTree_->currentItem();if(item&&item->data(0,Qt::UserRole).isValid())openTask(item->data(0,Qt::UserRole).toString().toULongLong());};
-    connect(details,&QPushButton::clicked,this,open);
-    connect(tasksTree_,&QTreeWidget::itemDoubleClicked,this,[open](QTreeWidgetItem*,int){open();});return widget;
-}
-QWidget* MainWindow::addPage() {
-    auto widget=page(QStringLiteral("添加任务"),QStringLiteral("目录树选择 testcase；人工批次不会冒充每日定时回归。"));
-    auto layout=qobject_cast<QVBoxLayout*>(widget->layout());auto split=new QSplitter;
-    auto treePanel=new QWidget;auto treeLayout=new QVBoxLayout(treePanel);
-    treeLayout->setContentsMargins(0,0,0,0);
-    caseSearch_=new QLineEdit;caseSearch_->setPlaceholderText(QStringLiteral("搜索 testcase 名称或完整路径（保留已选项）"));
-    treeLayout->addWidget(caseSearch_);
-    casesTree_=new QTreeWidget;casesTree_->setHeaderLabel(QStringLiteral("Testcase 目录树"));casesTree_->setMouseTracking(true);
-    treeLayout->addWidget(casesTree_,1);split->addWidget(GcrpUi::card(treePanel));
-    connect(caseSearch_,&QLineEdit::textChanged,this,[this]{filterCases();});
-    auto formWidget=new QGroupBox(QStringLiteral("批次设置"));auto form=new QFormLayout(formWidget);
-    batchName_=new QLineEdit(QStringLiteral("人工验证批次"));target_=new QLineEdit(settings_.target);
-    revision_=new QComboBox;flow_=new QComboBox;
-    priority_=new QSpinBox;priority_->setRange(-100,100);
-    timeout_=new QSpinBox;timeout_->setRange(1,86400);timeout_->setValue(5400);
-    form->addRow(QStringLiteral("批次名称"),batchName_);form->addRow(QStringLiteral("业务目标（明确填写）"),target_);
-    form->addRow(QStringLiteral("GalaxCore ZIP 版本"),revision_);form->addRow(QStringLiteral("Server flow 模板"),flow_);
-    form->addRow(QStringLiteral("优先级"),priority_);form->addRow(QStringLiteral("单 case 超时 / 秒"),timeout_);
-    flowOptions_=new QTreeWidget;flowOptions_->setHeaderLabels({"flow_config 选项","数值"});
-    flowOptions_->setRootIsDecorated(false);flowOptions_->setMinimumHeight(240);
-    auto flowDialog=new QDialog(this);flowDialog->setWindowTitle(QStringLiteral("配置本次批次的 flow_config"));
-    flowDialog->resize(620,650);auto flowLayout=new QVBoxLayout(flowDialog);
-    auto explanation=new QLabel(QStringLiteral("勾选开启，未勾选关闭。仅影响当前批次，不修改服务端模板。"));
-    explanation->setWordWrap(true);flowLayout->addWidget(explanation);flowLayout->addWidget(flowOptions_,1);
-    auto resetFlow=new QPushButton(QStringLiteral("恢复当前模板默认值"));flowLayout->addWidget(resetFlow);
-    auto flowButtons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
-    flowButtons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));
-    flowButtons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-    flowLayout->addWidget(flowButtons);connect(flowButtons,&QDialogButtonBox::accepted,flowDialog,&QDialog::accept);
-    connect(flowButtons,&QDialogButtonBox::rejected,flowDialog,&QDialog::reject);
-    auto configureFlow=new QPushButton(QStringLiteral("勾选执行阶段 / 比较项…"));form->addRow(QStringLiteral("flow_config"),configureFlow);
-    connect(configureFlow,&QPushButton::clicked,this,[this,flowDialog]{
-        const auto previous=selectedFlowConfig();
-        if(flowDialog->exec()==QDialog::Accepted)return;
-        for(int i=0;i<flowOptions_->topLevelItemCount();++i){auto item=flowOptions_->topLevelItem(i);
-            const int value=previous.value(item->text(0).toStdString(),0);
-            if(auto number=qobject_cast<QSpinBox*>(flowOptions_->itemWidget(item,1)))number->setValue(value);
-            else item->setCheckState(0,value?Qt::Checked:Qt::Unchecked);
-        }
-    });
-    connect(resetFlow,&QPushButton::clicked,this,[this]{resetFlowOptions();});
-    connect(flow_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){resetFlowOptions();});
-    auto snapshot=new QPushButton(QStringLiteral("查看本次 flow_config"));form->addRow(snapshot);
-    auto importButton=new QPushButton(QStringLiteral("导入服务端目录清单"));form->addRow(importButton);
-    auto hint=new QLabel(QStringLiteral("当前 Server 没有目录清单 API。先从 Server 导出清单并导入；提交时 Server 仍校验参数。"));
-    hint->setWordWrap(true);form->addRow(hint);split->addWidget(formWidget);split->setStretchFactor(0,3);split->setStretchFactor(1,2);
-    layout->addWidget(split,1);auto bottom=new QHBoxLayout;selection_=new QLabel(QStringLiteral("已选 0 个 testcase"));bottom->addWidget(selection_,1);
-    submit_=new QPushButton(QStringLiteral("预览并提交"));submit_->setProperty("kind","primary"); submit_->setEnabled(demo_);bottom->addWidget(submit_);layout->addLayout(bottom);
-    connect(casesTree_,&QTreeWidget::itemChanged,this,[this]{selection_->setText(QStringLiteral("已选 %1 个 testcase").arg(selectedCases(casesTree_).size()));});
-    connect(importButton,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,QStringLiteral("导入 Server 目录清单"),{},"JSON (*.json)");if(!path.isEmpty()){settings_.catalogFile=path;loadCatalog();}});
-    connect(snapshot,&QPushButton::clicked,this,[this]{QMessageBox::information(this,QStringLiteral("本次任务配置；不修改 Server 模板"),QString::fromStdString(selectedFlowConfig().dump(2)));});
-    connect(submit_,&QPushButton::clicked,this,[this]{submitBatch();});return widget;
-}
-QWidget* MainWindow::regressionPage() {
-    auto widget=page(QStringLiteral("每日回归"),QStringLiteral("按日期比较每日定时批次；人工批次独立，缺少结果单独列出。"));
-    auto layout=qobject_cast<QVBoxLayout*>(widget->layout());auto bar=new QHBoxLayout;
-    dateA_=new QDateEdit(demo_?QDate(2026,10,11):QDate::currentDate().addDays(-1));dateB_=new QDateEdit(demo_?QDate(2026,10,12):QDate::currentDate());
-    dateA_->setCalendarPopup(true);dateB_->setCalendarPopup(true);dateA_->setDisplayFormat("yyyy-MM-dd");dateB_->setDisplayFormat("yyyy-MM-dd");
-    bar->addWidget(new QLabel(QStringLiteral("基准日期")));bar->addWidget(dateA_);bar->addWidget(new QLabel(QStringLiteral("比较日期")));bar->addWidget(dateB_);
-    auto compare=new QPushButton(QStringLiteral("比较 / 首页"));bar->addWidget(compare);bar->addStretch();layout->addLayout(bar);
-    auto filters=new QHBoxLayout;regressionStage_=new QComboBox;regressionStage_->addItem(QStringLiteral("全部阶段"),"");
-    regressionChange_=new QComboBox;
-    for(const auto& item:QList<QPair<QString,QString>>{{QStringLiteral("全部变化"),""},{QStringLiteral("新回退"),"REGRESSION"},
-        {QStringLiteral("新通过"),"IMPROVEMENT"},{QStringLiteral("缺少结果"),"MISSING"},
-        {QStringLiteral("异常 / 未完成"),"EXCEPTION"},{QStringLiteral("无确认回退"),"UNCHANGED"}})regressionChange_->addItem(item.first,item.second);
-    regressionSearch_=new QLineEdit;regressionSearch_->setPlaceholderText(QStringLiteral("testcase 路径搜索"));
-    filters->addWidget(regressionStage_);filters->addWidget(regressionChange_);filters->addWidget(regressionSearch_,1);layout->addLayout(filters);
-    regressionSummary_=new QLabel;regressionSummary_->setWordWrap(true);layout->addWidget(regressionSummary_);
-    regressionTable_=table(demo_?QStringList{"testcase","基准结果","比较结果","变化"}:
-        QStringList{"模板阶段","testcase","基准结果","比较结果","变化"});layout->addWidget(GcrpUi::card(regressionTable_),1);
-    auto actions=new QHBoxLayout;auto baseline=new QPushButton(QStringLiteral("基准任务 / 日志"));
-    auto current=new QPushButton(QStringLiteral("比较任务 / 日志"));regressionNext_=new QPushButton(QStringLiteral("下一页"));regressionNext_->setEnabled(false);
-    actions->addWidget(baseline);actions->addWidget(current);actions->addStretch();actions->addWidget(regressionNext_);layout->addLayout(actions);
-    auto open=[this](const char* side){const auto row=regressionTable_->currentRow();
-        if(demo_||row<0||row>=int(regressionRows_.size())||regressionRows_[row][side].is_null())return;
-        openTask(regressionRows_[row][side]["task_id"].get<uint64_t>());};
-    connect(baseline,&QPushButton::clicked,this,[open]{open("baseline");});connect(current,&QPushButton::clicked,this,[open]{open("comparison");});
-    connect(regressionNext_,&QPushButton::clicked,this,[this]{queryDaily(true);});
-    auto hint=new QLabel(demo_?QStringLiteral("演示数据：PASS→FAIL 为新回退；TIMEOUT 和缺失结果另外展示。"):
-        QStringLiteral("只统计带 scheduled 来源和日期的定时任务；人工 / 未分类历史记录排除。重复记录按同日同阶段同 case 的最新 task_id 展示，每页 50 条。"));
-    hint->setWordWrap(true);layout->addWidget(hint);connect(compare,&QPushButton::clicked,this,[this]{if(demo_)compareDemoDates();else queryDaily();});if(demo_)compareDemoDates();return widget;
-}
+
 void MainWindow::note(const QString& text, bool error) {
-    connection_->setText(text);connection_->setStyleSheet(error?"color:#ad3442":"color:#52647b");
+    connection_->setText(text);connection_->setToolTip(text);connection_->setStyleSheet(error?"color:#c14450":"color:#6d7d93");
+    if(error||text.startsWith(QStringLiteral("接单策略"))||text.startsWith(QStringLiteral("更新请求")))GcrpUi::toast(this,text,error);
 }
+
 void MainWindow::fetchList(const std::string& type,const Json& filter,const Json& cursor,
-    std::shared_ptr<Json> rows,std::string instance,std::function<void(bool,Json,QString)> done,int page) {
+    std::shared_ptr<Json> rows,std::string instance,std::function<void(bool,Json,QString)> done,int page,uint64_t generation) {
     Json data=filter;data["limit"]=50;if(!cursor.is_null())data[type=="query_workers"?"after":"before_task_id"]=cursor;
-    rpc_.request(type,data,[this,type,filter,rows,instance,done,page](RpcReply r){
+    rpc_.request(type,data,[this,type,filter,rows,instance,done,page,generation](RpcReply r){
         if(!r.ok){done(false,{},r.error);return;}
         if(!instance.empty()&&instance!=r.instance){done(false,{},QStringLiteral("Server 已重启，请重新刷新；保留原数据"));return;}
         try {
+            const auto current=r.result.at("snapshot_generation").get<uint64_t>();
+            if(page&&generation!=current){done(false,{},QStringLiteral("分页期间数据已变化，保留旧快照并等待下一次刷新，不混合统计。"));return;}
             const auto& items=r.result.at("items");if(!items.is_array())throw std::runtime_error("items must be array");
             for(const auto& row:items)rows->push_back(row);
             if(r.result.value("has_more",false)){
-                if(page>=19){done(true,*rows,QStringLiteral("仅加载前 1000 条；未加载条目未计入当前视图"));return;}
+                if(page>=99){done(true,*rows,QStringLiteral("仅加载最近 5000 条；未加载条目未计入当前视图"));return;}
                 auto next=r.result.at(type=="query_workers"?"next_after":"next_before_task_id");
                 if(next.is_null()||items.empty())throw std::runtime_error("invalid cursor");
-                fetchList(type,filter,next,rows,r.instance,done,page+1);
+                fetchList(type,filter,next,rows,r.instance,done,page+1,current);
             }else done(true,*rows,{});
         }catch(const std::exception& e){done(false,{},QString::fromUtf8(e.what()));}
     });
 }
+
 void MainWindow::invalidateSnapshots(bool workers,bool tasks) {
     if(workers)workersStale_=true;if(tasks)tasksStale_=true;
     updateFreshness();showWorkers();
 }
+
 void MainWindow::updateFreshness() {
     if(demo_){freshness_->hide();return;}
     QStringList missing;
@@ -320,6 +144,7 @@ void MainWindow::updateFreshness() {
         QStringLiteral(" 工作机快照距今 %1 秒。").arg(workerUpdated_.elapsed()/1000));
 }
 
+
 void MainWindow::refresh() {
     if(demo_){showWorkers();showTasks();return;}if(loading_||submitting_||regressionLoading_)return;
     loading_=true;
@@ -331,56 +156,7 @@ void MainWindow::refresh() {
           [this,warning](bool success,Json rows,QString taskWarning){loading_=false;if(!success){invalidateSnapshots(false,true);note(QStringLiteral("任务查询失败：")+taskWarning,true);return;}tasks_=std::move(rows);tasksStale_=false;taskUpdated_.restart();updateFreshness();showTasks();note(QStringLiteral("已连接 · 更新于 ")+QDateTime::currentDateTime().toString("HH:mm:ss")+" "+warning+taskWarning);});
     });
 }
-void MainWindow::showWorkers() {
-    const auto selected=machines_->currentText();QSet<QString> machineNames;
-    for(const auto& w:workers_)machineNames.insert(text(w,"machine_id"));
-    {QSignalBlocker blocked(machines_);machines_->clear();auto list=machineNames.values();list.sort();machines_->addItems(list);if(list.contains(selected))machines_->setCurrentText(selected);}
-    {QSignalBlocker blocked(hostsList_);hostsList_->clear();
-        for(int i=0;i<machines_->count();++i)hostsList_->addItem(machines_->itemText(i));
-        hostsList_->setCurrentRow(machines_->currentIndex());}
-    slotsTable_->setRowCount(0);
-    for(const auto& w:workers_)if(text(w,"machine_id")==machines_->currentText()){
-        int row=slotsTable_->rowCount();slotsTable_->insertRow(row);cell(slotsTable_,row,0,text(w,"slot_id"));cell(slotsTable_,row,1,text(w,"worker_id"));
-        auto status=text(w,"status");if(status=="ONLINE")status+=w.value("used",0)>0?QStringLiteral(" · 忙碌"):QStringLiteral(" · 空闲");
-        if(!demo_&&workersStale_)status=QStringLiteral("未知 · 数据过期（上次：")+status+QStringLiteral("）");
-        cell(slotsTable_,row,2,status);cell(slotsTable_,row,3,text(w,"used")+" / "+text(w,"capacity"));
-        cell(slotsTable_,row,4,"—");for(const auto& t:tasks_)if(text(t,"worker_id")==text(w,"worker_id")&&(text(t,"status")=="RUNNING"||text(t,"status")=="ASSIGNED")){
-            cell(slotsTable_,row,4,"Task #"+text(t,"task_id"));slotsTable_->item(row,4)->setData(Qt::UserRole,text(t,"task_id"));break;
-        }
-    }
-}
-void MainWindow::showTasks() {
-    const auto current=tasksTree_->currentItem();QString selected=current?current->data(0,Qt::UserRole).toString():QString{};
-    const auto selectedBatch=current?current->data(0,Qt::UserRole+1).toString():QString{};
-    QSet<QString> expanded;
-    for(int i=0;i<tasksTree_->topLevelItemCount();++i){auto item=tasksTree_->topLevelItem(i);
-        if(item->isExpanded())expanded.insert(item->data(0,Qt::UserRole+1).toString());}
-    tasksTree_->clear();QMap<QString,QTreeWidgetItem*> batches;
-    for(const auto& t:tasks_){auto batch=text(t,"batch_id");if(batch.isEmpty()||batch=="—")batch=QStringLiteral("无批次 / 单任务");
-        auto parent=batches.value(batch,nullptr);if(!parent){parent=new QTreeWidgetItem(tasksTree_,{batch});parent->setData(0,Qt::UserRole+1,batch);parent->setExpanded(true);batches[batch]=parent;}
-        QString casePath;
-        if(t.contains("payload")&&t["payload"].is_object())casePath=text(t["payload"],"case");
-        auto item=new QTreeWidgetItem(parent,{"Task #"+text(t,"task_id")+" · "+casePath,text(t,"status"),text(t,"target"),text(t,"revision"),text(t,"worker_id")});
-        item->setData(0,Qt::UserRole,text(t,"task_id"));if(item->data(0,Qt::UserRole).toString()==selected)tasksTree_->setCurrentItem(item);
-    }
-    for(auto parent:batches){QMap<QString,int> totals;QStringList revisions;
-        for(int i=0;i<parent->childCount();++i){auto item=parent->child(i);totals[item->text(1)]++;
-            if(!revisions.contains(item->text(3)))revisions<<item->text(3);}
-        const int pass=totals["SUCCEEDED"],fail=totals["FAILED"],timeout=totals["TIMEOUT"],
-            running=totals["RUNNING"]+totals["ASSIGNED"],queued=totals["QUEUED"]+totals["PENDING"],
-            done=parent->childCount()-running-queued,cancelled=totals["CANCELLED"];
-        parent->setText(1,running?"RUNNING":queued?"QUEUED":fail||timeout?"FAILED":cancelled?"CANCELLED":"SUCCEEDED");
-        parent->setText(3,revisions.join(", "));parent->setText(5,QString::number(pass));
-        parent->setText(6,QString::number(fail));parent->setText(7,QString::number(timeout));
-        parent->setText(8,QStringLiteral("见明细"));
-        parent->setText(9,QStringLiteral("%1 / %2").arg(running).arg(queued));
-        parent->setText(10,QStringLiteral("%1 / %2").arg(done).arg(parent->childCount()));
-        parent->setText(11,done>cancelled?QString::number(100.0*pass/(done-cancelled),'f',1)+"%":QStringLiteral("—"));
-        const auto batch=parent->data(0,Qt::UserRole+1).toString();
-        parent->setExpanded(expanded.contains(batch));
-        if(!selectedBatch.isEmpty()&&batch==selectedBatch)tasksTree_->setCurrentItem(parent);
-    }showWorkers();
-}
+
 void MainWindow::filterCases() {
     const auto query=caseSearch_->text().trimmed();
     std::function<bool(QTreeWidgetItem*)> matches=[&](QTreeWidgetItem* item){
@@ -391,29 +167,84 @@ void MainWindow::filterCases() {
     };
     for(int i=0;i<casesTree_->topLevelItemCount();++i)matches(casesTree_->topLevelItem(i));
 }
+
 void MainWindow::loadCatalog() {
+    if(catalogLoading_||submitting_)return;
     try {
         if(!demo_){if(settings_.catalogFile.isEmpty()){submit_->setEnabled(false);return;}QFile file(settings_.catalogFile);if(!file.open(QIODevice::ReadOnly)||file.size()>16*1024*1024)throw std::runtime_error("cannot read catalog (maximum 16 MiB)");auto bytes=file.readAll();catalog_=Json::parse(bytes.constData(),bytes.constData()+bytes.size());}
+        applyCatalog();
+        catalogStatus_->setText(demo_?QStringLiteral("离线演示清单，不代表 Server 实际目录。"):
+            QStringLiteral("已导入本地清单：")+settings_.catalogFile+QStringLiteral("；内容可能过期，优先使用 Server 刷新。"));
+    }catch(const std::exception& e){catalog_=nullptr;submit_->setEnabled(false);catalogStatus_->setText(QStringLiteral("目录清单错误：")+QString::fromUtf8(e.what()));}
+}
+
+void MainWindow::loadServerCatalog(uint64_t offset,uint64_t generation,std::shared_ptr<Json> result,std::string instance,bool force) {
+    if(!result){
+        if(catalogLoading_||submitting_)return;
+        catalogLoading_=true;submit_->setEnabled(false);
+        result=std::make_shared<Json>(Json{{"cases",Json::array()}});
+        catalogStatus_->setText(QStringLiteral("正在从 Server 读取 testcase、ZIP 和 flow 模板…"));
+    }
+    Json query=Json::object();
+    if(generation){query["offset"]=offset;query["snapshot_generation"]=generation;}
+    else if(force)query["refresh"]=true;
+    rpc_.request("query_catalog",query,[this,result,instance,offset,generation](RpcReply r){
+        auto failed=[this](const QString& message){catalogLoading_=false;submit_->setEnabled(false);
+            catalogStatus_->setText(QStringLiteral("Server 目录加载失败，禁止提交；请检查配置后刷新：")+message);};
+        if(!r.ok){failed(r.error);return;}
+        try {
+            if(!instance.empty()&&r.instance!=instance)throw std::runtime_error("Server restarted during catalog query; refresh");
+            const auto& rows=r.result.at("cases");
+            if(!rows.is_array()||rows.size()>200)throw std::runtime_error("invalid catalog page");
+            const auto current=r.result.at("snapshot_generation").get<uint64_t>();
+            if(!current||(generation&&current!=generation))throw std::runtime_error("catalog changed; refresh");
+            if(!generation)for(const char* key:{"templates","revisions","protected_revisions","sources","warnings"})(*result)[key]=r.result.at(key);
+            for(const auto& path:rows)(*result)["cases"].push_back(path);
+            if((*result)["cases"].size()>50000)throw std::runtime_error("catalog exceeds 50000 cases");
+            const auto next=r.result.at("next_offset");
+            if(!next.is_null()){
+                auto n=next.get<uint64_t>();if(n<=offset||n!=(*result)["cases"].size()||rows.empty())throw std::runtime_error("invalid catalog cursor");
+                loadServerCatalog(n,current,result,r.instance);return;
+            }
+            if(r.result.at("total_cases")!=(*result)["cases"].size())throw std::runtime_error("incomplete catalog");
+            catalog_=std::move(*result);catalogLoading_=false;applyCatalog();
+            QStringList warnings;
+            for(const auto& warning:catalog_.value("warnings",Json::array()))warnings<<QString::fromStdString(warning.get<std::string>());
+            catalogStatus_->setText(QStringLiteral("来源：Server %1:%2\n%3 个 testcase · %4 个 ZIP 版本 · %5 个模板\n")
+                .arg(settings_.host).arg(settings_.port).arg(qulonglong(catalog_["cases"].size())).arg(qulonglong(catalog_["revisions"].size())).arg(qulonglong(catalog_["templates"].size()))+warnings.join("\n"));
+        }catch(const std::exception& e){failed(QString::fromUtf8(e.what()));}
+    });
+}
+
+void MainWindow::applyCatalog() {
         if(!catalog_.at("cases").is_array()||catalog_["cases"].size()>50000||!catalog_.at("templates").is_object()||!catalog_.at("revisions").is_array())throw std::runtime_error("invalid catalog");
         for(const auto& version:catalog_["revisions"]){if(!version.is_string())throw std::runtime_error("revision must be text");const auto v=version.get<std::string>();if(v.empty()||v.size()>32||v.find_first_not_of("0123456789")!=std::string::npos)throw std::runtime_error("revision must be 1-32 decimal digits");}
         for(auto it=catalog_["templates"].begin();it!=catalog_["templates"].end();++it){if(!it.value().is_object()||!it.value().contains("flow_config")||!it.value()["flow_config"].is_object()||it.value()["flow_config"].empty())throw std::runtime_error("template requires nonempty flow_config");}
         for(const auto& value:catalog_["cases"]){if(!value.is_string())throw std::runtime_error("invalid case path");auto path=QString::fromStdString(value.get<std::string>());auto parts=path.split('/');if(path.startsWith('/')||path.contains('\\')||path.contains(':')||parts.contains("..")||parts.contains(".")||parts.contains("")||!path.endsWith("/run.tcl"))throw std::runtime_error("case must be a safe relative run.tcl path");}
+        const auto selected=selectedCases(casesTree_);const auto previousRevision=revision_->currentText(),previousFlow=flow_->currentText();
+        QSignalBlocker flowSignals(flow_);
         casesTree_->clear();revision_->clear();flow_->clear();auto root=new QTreeWidgetItem(casesTree_,{QStringLiteral("test2")});root->setFlags(root->flags()|Qt::ItemIsUserCheckable|Qt::ItemIsAutoTristate);root->setCheckState(0,Qt::Unchecked);
         QMap<QString,QTreeWidgetItem*> directories;directories[""]=root;
         for(const auto& value:catalog_["cases"]){auto path=QString::fromStdString(value.get<std::string>());auto parts=path.split('/');QString key;auto parent=root;
             for(int i=0;i<parts.size()-1;++i){key+=(key.isEmpty()?"":"/")+parts[i];auto item=directories.value(key,nullptr);if(!item){item=new QTreeWidgetItem(parent,{parts[i]});item->setFlags(item->flags()|Qt::ItemIsUserCheckable|Qt::ItemIsAutoTristate);item->setCheckState(0,Qt::Unchecked);directories[key]=item;}parent=item;}
-            auto leaf=new QTreeWidgetItem(parent,{"run.tcl"});leaf->setFlags(leaf->flags()|Qt::ItemIsUserCheckable);leaf->setCheckState(0,Qt::Unchecked);leaf->setData(0,Qt::UserRole,path);leaf->setToolTip(0,path);
+            auto leaf=new QTreeWidgetItem(parent,{"run.tcl"});leaf->setFlags(leaf->flags()|Qt::ItemIsUserCheckable);leaf->setCheckState(0,selected.contains(path)?Qt::Checked:Qt::Unchecked);leaf->setData(0,Qt::UserRole,path);leaf->setToolTip(0,path);
         }casesTree_->expandToDepth(2);filterCases();
-        for(const auto& r:catalog_["revisions"])revision_->addItem(QString::fromStdString(r.get<std::string>()));
+        for(const auto& r:catalog_["revisions"]){revision_->addItem(QString::fromStdString(r.get<std::string>()));
+            if(catalog_.contains("protected_revisions"))for(const auto& protectedVersion:catalog_["protected_revisions"])
+                if(r==protectedVersion)revision_->setItemData(revision_->count()-1,QStringLiteral("每日回归受保护版本"),Qt::ToolTipRole);
+        }
         for(auto it=catalog_["templates"].begin();it!=catalog_["templates"].end();++it)flow_->addItem(QString::fromStdString(it.key()));
-        submit_->setEnabled(demo_||operations_.contains("submit_task"));
-    }catch(const std::exception& e){catalog_=nullptr;submit_->setEnabled(false);note(QStringLiteral("目录清单错误：")+QString::fromUtf8(e.what()),true);}
+        if(revision_->findText(previousRevision)>=0)revision_->setCurrentText(previousRevision);
+        if(flow_->findText(previousFlow)>=0)flow_->setCurrentText(previousFlow);
+        resetFlowOptions();
+        submit_->setEnabled((demo_||operations_.contains("submit_task"))&&!catalog_["cases"].empty()&&!catalog_["templates"].empty()&&!catalog_["revisions"].empty());
 }
+
 void MainWindow::resetFlowOptions() {
     flowOptions_->clear();
     const auto key=flow_->currentText().toStdString();
-    if(!catalog_.is_object()||!catalog_.contains("templates")||!catalog_["templates"].contains(key))return;
-    const auto defaults=catalog_["templates"][key].at("flow_config");
+    const auto defaults=catalog_.is_object()&&catalog_.contains("templates")&&catalog_["templates"].contains(key)?
+        catalog_["templates"][key].at("flow_config"):Json::object();
     const QStringList standard{"read_edif","read_xdc","report_timing_summary","report_utilization",
         "opt_design","place_design","place_design_from_syn","phys_opt_design","route_design",
         "route_design_from_place","write_checkpoint","write_bitstream","bit_cmp","msk_cmp",
@@ -427,6 +258,7 @@ void MainWindow::resetFlowOptions() {
     }
     flowOptions_->resizeColumnToContents(0);
 }
+
 Json MainWindow::selectedFlowConfig() const {
     Json snapshot=Json::object();
     for(int i=0;i<flowOptions_->topLevelItemCount();++i){auto item=flowOptions_->topLevelItem(i);
@@ -434,6 +266,7 @@ Json MainWindow::selectedFlowConfig() const {
         snapshot[item->text(0).toStdString()]=number?number->value():(item->checkState(0)==Qt::Checked?1:0);
     }return snapshot;
 }
+
 void MainWindow::submitBatch() {
     if(submitting_)return;auto paths=selectedCases(casesTree_);
     if(paths.isEmpty()||batchName_->text().trimmed().isEmpty()||(!demo_&&target_->text().trimmed().isEmpty())||revision_->currentText().isEmpty()||flow_->currentText().isEmpty()){
@@ -451,6 +284,7 @@ void MainWindow::submitBatch() {
     if(demo_){note(QStringLiteral("演示：批次预览通过；未发送任何网络请求"));return;}
     submitting_=true;submit_->setEnabled(false);submitNext();
 }
+
 void MainWindow::submitNext() {
     if(submitIndex_==int(pendingSubmissions_.size())){submitting_=false;submit_->setEnabled(true);QMessageBox::information(this,QStringLiteral("提交完成"),QStringLiteral("已接收 %1 个任务\n批次 %2").arg(submitIndex_).arg(manualBatch_));refresh();return;}
     note(QStringLiteral("提交批次 %1：%2 / %3 已接收").arg(manualBatch_).arg(submitIndex_).arg(pendingSubmissions_.size()));
@@ -458,7 +292,9 @@ void MainWindow::submitNext() {
         if(!r.ok){submitting_=false;submit_->setEnabled(true);QMessageBox::warning(this,QStringLiteral("部分提交 / 结果可能不确定"),QStringLiteral("已确认接收 %1 个任务。\n批次：%2\n%3\n请先查询本批次；直接重新提交会创建新批次。").arg(submitIndex_).arg(manualBatch_).arg(r.error));refresh();return;}++submitIndex_;submitNext();
     });
 }
+
 void MainWindow::cancelSelection() {
+    if(!demo_&&tasksStale_){note(QStringLiteral("任务快照已过期，请刷新确认后再取消。"),true);return;}
     auto item=tasksTree_->currentItem();if(!item)return;
     const bool one=item->data(0,Qt::UserRole).isValid();auto id=item->data(0,Qt::UserRole).toString();auto batch=item->data(0,Qt::UserRole+1).toString();
     if(!one&&batch==QStringLiteral("无批次 / 单任务"))return;
@@ -468,127 +304,14 @@ void MainWindow::cancelSelection() {
     if(!operations_.contains(op)){note(QStringLiteral("Server 未声明此操作"),true);return;}
     rpc_.request(op,one?Json{{"task_id",id.toULongLong()}}:Json{{"batch_id",batch.toStdString()}},[this](RpcReply r){if(!r.ok)QMessageBox::warning(this,QStringLiteral("取消未完成"),r.error);refresh();});
 }
-void MainWindow::openTask(uint64_t id) {
-    auto display=[this](RpcReply r){if(!r.ok){QMessageBox::warning(this,QStringLiteral("查询失败"),r.error);return;}
-        auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(QStringLiteral("Task 详情与日志"));dialog->resize(850,650);auto layout=new QVBoxLayout(dialog);
-        auto body=new QPlainTextEdit(QString::fromStdString(r.result.dump(2)));body->setReadOnly(true);layout->addWidget(body,1);
-        auto logs=new QPushButton(QStringLiteral("查看 Server 归档日志"));layout->addWidget(logs);connect(logs,&QPushButton::clicked,this,[this,task=r.result]{openLogs(task);});dialog->show();};
-    if(demo_){Json t={{"task_id",id},{"run_id","demo-run"},{"status","SUCCEEDED"},{"payload",{{"case","convergentRoundingEven/run.tcl"},{"flow","route"}}}};display({true,{},t,{}});}
-    else rpc_.request("query_task",{{"task_id",id}},display);
-}
-void MainWindow::openLogs(const Json& task) {
-    if(!task.contains("run_id")||text(task,"run_id").isEmpty()||text(task,"status")=="RUNNING"||text(task,"status")=="ASSIGNED"){QMessageBox::information(this,QStringLiteral("日志待生成 / 待上传"),QStringLiteral("当前 API 支持结束后的归档日志。缺少日志不代表执行失败。"));return;}
-    auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(QStringLiteral("执行日志 · 成功与失败均可查看"));dialog->resize(950,650);
-    auto layout=new QVBoxLayout(dialog);auto controls=new QHBoxLayout;auto files=new QComboBox;controls->addWidget(files,1);auto next=new QPushButton(QStringLiteral("下一段"));controls->addWidget(next);next->setEnabled(false);layout->addLayout(controls);
-    auto status=new QLabel(QStringLiteral("读取当前 run_id 的日志文件清单…"));status->setTextFormat(Qt::PlainText);status->setWordWrap(true);layout->addWidget(status);
-    auto body=new QPlainTextEdit;body->setReadOnly(true);body->setFont(QFont("monospace",10));layout->addWidget(body,1);
-    auto search=new QLineEdit;search->setPlaceholderText(QStringLiteral("只搜索当前已加载文本"));layout->addWidget(search);connect(search,&QLineEdit::returnPressed,body,[body,search]{body->find(search->text());});
-    auto offset=std::make_shared<uint64_t>(0);auto reading=std::make_shared<bool>(false);QPointer<QDialog> guard(dialog);
-    auto read=std::make_shared<std::function<void()>>();
-    *read=[this,guard,task,files,next,status,body,offset,reading]{if(!guard||*reading||files->currentText().isEmpty())return;if(demo_){body->setPlainText("[RUNNER] convergentRoundingEven\n[COMPARE] bit_cmp PASS\n[RESULT] COMPARE_ARTIFACTS_PASS\n");status->setText(QStringLiteral("示例日志；真实模式按偏移读取 Server 归档"));return;}
-        *reading=true;files->setEnabled(false);next->setEnabled(false);auto name=files->currentData().toString();auto requestOffset=*offset;
-        rpc_.request("read_log",{{"task_id",task.at("task_id")},{"run_id",task.at("run_id")},{"name",name.toStdString()},{"offset",requestOffset},{"limit",settings_.logPageBytes}},[guard,files,next,status,body,offset,reading,name,requestOffset](RpcReply r){if(!guard)return;*reading=false;files->setEnabled(true);if(files->currentData().toString()!=name){status->setText(QStringLiteral("文件已切换，请重新选择以加载"));return;}if(!r.ok){status->setText(r.error);return;}try{
-            auto hex=r.result.at("data_hex").get<std::string>();auto bytes=QByteArray::fromHex(QByteArray(hex.data(),int(hex.size())));auto size=r.result.at("size").get<uint64_t>();*offset=r.result.at("next_offset").get<uint64_t>();
-            body->setPlainText(QString::fromUtf8(bytes));status->setText(QStringLiteral("当前片段 [%1, %2) / %3 字节 · %4 · UTF-8 预览，可能替换非法字节").arg(qulonglong(requestOffset)).arg(qulonglong(*offset)).arg(qulonglong(size)).arg(r.result.value("complete",false)?QStringLiteral("上传完成"):QStringLiteral("上传中")));next->setEnabled(*offset<size);
-        }catch(const std::exception& e){status->setText(QString::fromUtf8(e.what()));}});
-    };
-    connect(next,&QPushButton::clicked,dialog,[read]{(*read)();});
-    connect(files,QOverload<int>::of(&QComboBox::currentIndexChanged),dialog,[offset,reading,read,body]{*offset=0;body->clear();if(!*reading)(*read)();});
-    dialog->show();
-    if(demo_){files->addItem("case-run.log","case-run.log");return;}
-    rpc_.request("query_logs",{{"task_id",task.at("task_id")},{"run_id",task.at("run_id")}},[guard,files,status](RpcReply r){if(!guard)return;if(!r.ok){status->setText(r.error);return;}try{const auto& items=r.result.at("items");for(const auto& f:items)files->addItem(text(f,"name")+(f.value("complete",false)?"":" · 上传中"),text(f,"name"));if(items.empty())status->setText(QStringLiteral("暂无归档文件：可能待上传、未采集或已超过 30 天；当前 API 尚不能区分这些原因"));}catch(const std::exception& e){status->setText(QString::fromUtf8(e.what()));}});
-}
-void MainWindow::queryDaily(bool next) {
-    if(regressionLoading_||loading_||submitting_){note(QStringLiteral("正在执行其他请求，请稍后再查询"));return;}
-    if(!operations_.contains("query_regression")){note(QStringLiteral("Server 未声明回归查询能力"),true);return;}
-    Json request={{"baseline_date",dateA_->date().toString("yyyy-MM-dd").toStdString()},
-        {"date",dateB_->date().toString("yyyy-MM-dd").toStdString()},{"limit",50}};
-    const auto stage=regressionStage_->currentData().toString(),change=regressionChange_->currentData().toString();
-    if(!stage.isEmpty())request["template"]=stage.toStdString();if(!change.isEmpty())request["change"]=change.toStdString();
-    if(!regressionSearch_->text().trimmed().isEmpty())request["search"]=regressionSearch_->text().trimmed().toStdString();
-    const auto signature=request.dump();
-    if(next&&signature!=regressionFilter_){regressionSummary_->setText(QStringLiteral("筛选已改变，请点击比较 / 首页重新查询。"));return;}
-    if(!next)regressionFilter_=signature;
-    if(next&&!regressionCursor_.isEmpty())request["after_key"]=regressionCursor_.toStdString();
-    regressionLoading_=true;regressionNext_->setEnabled(false);
-    dateA_->setEnabled(false);dateB_->setEnabled(false);regressionStage_->setEnabled(false);
-    regressionChange_->setEnabled(false);regressionSearch_->setEnabled(false);
-    rpc_.request("query_regression",request,[this,next,stage](RpcReply reply){
-        regressionLoading_=false;
-        dateA_->setEnabled(true);dateB_->setEnabled(true);regressionStage_->setEnabled(true);
-        regressionChange_->setEnabled(true);regressionSearch_->setEnabled(true);
-        if(!reply.ok){regressionSummary_->setText(QStringLiteral("查询失败，原回归数据已过期：")+reply.error);note(reply.error,true);return;}
-        try {
-            const auto generation=reply.result.at("snapshot_generation").get<uint64_t>();
-            if(next&&(generation!=regressionGeneration_||reply.instance!=regressionInstance_)){
-                regressionSummary_->setText(QStringLiteral("数据已变化，请点击比较 / 首页重新查询，避免跨页混用。"));return;}
-            regressionGeneration_=generation;regressionInstance_=reply.instance;
-            regressionRows_=reply.result.at("items");regressionTable_->setRowCount(0);
-            QSignalBlocker block(regressionStage_);regressionStage_->clear();regressionStage_->addItem(QStringLiteral("全部阶段"),"");
-            for(const auto& name:reply.result.at("templates")){auto s=QString::fromStdString(name.get<std::string>());regressionStage_->addItem(s,s);}
-            const auto index=regressionStage_->findData(stage);if(index>=0)regressionStage_->setCurrentIndex(index);
-            for(const auto& item:regressionRows_){int row=regressionTable_->rowCount();regressionTable_->insertRow(row);
-                cell(regressionTable_,row,0,text(item,"template"));cell(regressionTable_,row,1,text(item,"case"));
-                cell(regressionTable_,row,2,item["baseline"].is_null()?QStringLiteral("缺少结果"):text(item["baseline"],"outcome"));
-                cell(regressionTable_,row,3,item["comparison"].is_null()?QStringLiteral("缺少结果"):text(item["comparison"],"outcome"));
-                const QMap<QString,QString> changes{{"REGRESSION",QStringLiteral("新回退")},{"IMPROVEMENT",QStringLiteral("新通过")},
-                    {"MISSING",QStringLiteral("缺少结果")},{"EXCEPTION",QStringLiteral("异常 / 未完成")},{"UNCHANGED",QStringLiteral("无确认回退")}};
-                cell(regressionTable_,row,4,changes.value(text(item,"change")));}
-            regressionCursor_=reply.result["next_after_key"].is_null()?QString{}:QString::fromStdString(reply.result["next_after_key"].get<std::string>());
-            regressionNext_->setEnabled(reply.result.at("has_more").get<bool>());
-            const auto& counts=reply.result.at("counts");
-            QString summary=QStringLiteral("匹配 %1 条 · 本页 %2 条 · 新回退 %3 · 新通过 %4 · 缺少 %5 · 异常 %6")
-                .arg(reply.result["total"].get<uint64_t>()).arg(regressionRows_.size())
-                .arg(counts["REGRESSION"].get<uint64_t>()).arg(counts["IMPROVEMENT"].get<uint64_t>())
-                .arg(counts["MISSING"].get<uint64_t>()).arg(counts["EXCEPTION"].get<uint64_t>());
-            for(auto it=reply.result["stages"].begin();it!=reply.result["stages"].end();++it){const auto& stats=it.value();
-                summary+=QStringLiteral("\n%1：共 %2 · 比较日 PASS %3 / FAIL %4 / TIMEOUT %5 · 新回退 %6 · 新通过 %7")
-                    .arg(QString::fromStdString(it.key())).arg(stats["total"].get<uint64_t>())
-                    .arg(stats["comparison"].value("PASS",uint64_t(0))).arg(stats["comparison"].value("FAIL",uint64_t(0)))
-                    .arg(stats["comparison"].value("TIMEOUT",uint64_t(0))).arg(stats["changes"]["REGRESSION"].get<uint64_t>())
-                    .arg(stats["changes"]["IMPROVEMENT"].get<uint64_t>());}
-            summary+=QStringLiteral("\n同日重复记录 %1（取最新 task_id）；阶段汇总不受搜索 / 变化筛选影响。")
-                .arg(reply.result["duplicate_records"].get<uint64_t>());regressionSummary_->setText(summary);
-        }catch(const std::exception& error){regressionSummary_->setText(QStringLiteral("回归响应无效，请更新 Server：")+QString::fromUtf8(error.what()));}
-    });
-}
-void MainWindow::compareDemoDates() {
-    regressionTable_->setRowCount(0);if(dateA_->date()==dateB_->date())return;
-    const QStringList caseNames{"convergentRoundingEven","shiftRegister","ramBlock","uartTx","dspMultiply"};
-    const QStringList a{"PASS","PASS","FAIL","PASS","PASS"},b{"PASS","FAIL","PASS","TIMEOUT","未运行"};
-    bool forward=dateA_->date()<dateB_->date();
-    for(int i=0;i<caseNames.size();++i){auto x=forward?a[i]:b[i],y=forward?b[i]:a[i];QString change=x=="PASS"&&y=="FAIL"?QStringLiteral("新回退"):x=="FAIL"&&y=="PASS"?QStringLiteral("新通过"):y=="未运行"?QStringLiteral("缺少结果"):y=="TIMEOUT"?QStringLiteral("超时异常"):QStringLiteral("无确认回退");regressionTable_->insertRow(i);cell(regressionTable_,i,0,caseNames[i]);cell(regressionTable_,i,1,x);cell(regressionTable_,i,2,y);cell(regressionTable_,i,3,change);}
-}
-bool MainWindow::selfTest() {
-    if(flowOptions_->topLevelItemCount()<19)return false;
-    const auto defaults=catalog_["templates"][flow_->currentText().toStdString()];
-    auto option=flowOptions_->topLevelItem(0);const auto before=selectedFlowConfig();
-    option->setCheckState(0,option->checkState(0)==Qt::Checked?Qt::Unchecked:Qt::Checked);
-    if(before==selectedFlowConfig()||defaults!=catalog_["templates"][flow_->currentText().toStdString()])return false;
-    resetFlowOptions();if(before!=selectedFlowConfig())return false;
-    if(hostsList_->count()!=machines_->count()||tasksTree_->columnCount()!=12)return false;
-    if(!demo_||pages_->count()!=4||machines_->count()!=3||tasksTree_->topLevelItemCount()!=1)return false;
-    tasksTree_->topLevelItem(0)->setExpanded(true);
-    tasksTree_->setCurrentItem(tasksTree_->topLevelItem(0));showTasks();
-    if(!tasksTree_->topLevelItem(0)->isExpanded()||tasksTree_->currentItem()!=tasksTree_->topLevelItem(0))return false;
-    auto root=casesTree_->topLevelItem(0);if(!root)return false;root->setCheckState(0,Qt::Checked);
-    if(selectedCases(casesTree_).size()!=3)return false;
-    for(QTreeWidgetItemIterator it(casesTree_);*it;++it)if(!(*it)->data(0,Qt::UserRole).toString().isEmpty()){(*it)->setCheckState(0,Qt::Unchecked);break;}
-    if(root->checkState(0)!=Qt::PartiallyChecked||selectedCases(casesTree_).size()!=2)return false;
-    const auto chosen=selectedCases(casesTree_);
-    caseSearch_->setText("a-case-that-does-not-exist");
-    if(!root->isHidden()||selectedCases(casesTree_)!=chosen)return false;
-    caseSearch_->clear();if(root->isHidden())return false;
-    const auto navigation=findChildren<QPushButton*>("navigation");
-    if(navigation.size()!=4)return false;
-    navigation[2]->click();if(pages_->currentIndex()!=2)return false;
-    navigation[0]->click();if(pages_->currentIndex()!=0)return false;
-    demo_=false;workersStale_=false;tasksStale_=false;workerUpdated_.start();taskUpdated_.start();
-    invalidateSnapshots(true,true);
-    if(!workersStale_||!tasksStale_||!freshness_->isVisible()||slotsTable_->rowCount()==0)return false;
-    if(!slotsTable_->item(0,2)->text().contains(QStringLiteral("数据过期")))return false;
-    workersStale_=false;tasksStale_=false;updateFreshness();showWorkers();
-    if(freshness_->isVisible()||slotsTable_->item(0,2)->text().contains(QStringLiteral("数据过期")))return false;
-    demo_=true;
-    return regressionTable_->rowCount()==5;
+
+bool MainWindow::catalogProbe() const {
+    if(catalogLoading_||!catalog_.is_object()||!submit_->isEnabled()||flowOptions_->topLevelItemCount()<19)return false;
+    for(const char* key:{"server.work_root","server.artifact_root","server.templates_dir"})
+        if(!catalog_.contains("sources")||catalog_["sources"].value(key,std::string())!="READY")return false;
+    size_t leaves=0;
+    for(QTreeWidgetItemIterator it(casesTree_);*it;++it)if(!(*it)->data(0,Qt::UserRole).toString().isEmpty())++leaves;
+    if(leaves!=catalog_["cases"].size())return false;
+    std::fprintf(stderr,"QT_CATALOG_PROBE PASS cases=%zu revisions=%d templates=%d flow_options=%d\n",leaves,revision_->count(),flow_->count(),flowOptions_->topLevelItemCount());
+    return true;
 }

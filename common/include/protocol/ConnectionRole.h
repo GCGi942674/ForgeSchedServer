@@ -8,6 +8,8 @@ constexpr bool isClientRequest(MessageType type) {
            type == MessageType::QUERY_STATUS ||
            type == MessageType::QUERY_TASKS || type == MessageType::QUERY_WORKERS ||
            type == MessageType::QUERY_CAPABILITIES ||
+           type == MessageType::QUERY_CATALOG ||
+           type == MessageType::CONTROL_WORKERS ||
            type == MessageType::CANCEL_TASK || type == MessageType::QUERY_BATCH ||
            type == MessageType::CANCEL_BATCH || type == MessageType::QUERY_REGRESSION ||
            type == MessageType::QUERY_PROGRESS || type == MessageType::QUERY_ROLLBACK ||

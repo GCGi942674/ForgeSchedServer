@@ -22,6 +22,7 @@ from pjtest_adapter import PJtestAdapter
 from runtime_config import load_config
 from recovery_journal import write_json, remove
 from log_retention import prune_worker_logs
+from maintenance import SlotMaintenance
 
 MAX_FRAME = 1024 * 1024
 _SLOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
@@ -70,6 +71,7 @@ class Worker:
         self.retention_days = getattr(args, "retention_days", 30)
         self.next_log_prune = 0
         self.draining = False
+        self.maintenance = None
         self.executor = ProcessExecutor(self.heartbeat)
         self.executor.before_launch = self.before_launch
         self.adapter = None
@@ -112,7 +114,12 @@ class Worker:
                     return
                 self.connect()
             self.acknowledge_drain()
-            self.request("worker_heartbeat", dict(worker_id=self.args.worker_id))
+            data = dict(worker_id=self.args.worker_id)
+            if self.maintenance and self.maintenance.acknowledgement() is not None:
+                data['maintenance_ack'] = self.maintenance.acknowledgement()
+            management = self.request("worker_heartbeat", data)
+            if self.maintenance and isinstance(management, dict):
+                self.maintenance.offer(management.get('command'))
             if self.assigned is None and time.monotonic() >= self.next_log_retry:
                 self.next_log_retry = time.monotonic() + 15
                 self.try_flush_logs()
@@ -120,6 +127,8 @@ class Worker:
                 self.next_log_prune = time.monotonic() + 3600
                 try:
                     prune_worker_logs(self.args.output, self.retention_days)
+                    if self.maintenance:
+                        self.maintenance.prune_logs(self.retention_days)
                 except (OSError, ValueError, RuntimeError) as error:
                     print("[WORKER] log retention deferred: " + str(error), flush=True)
         except TransportError as error:
@@ -135,7 +144,7 @@ class Worker:
         self.buffer.clear()
         self.request("worker_register", dict(worker_id=self.args.worker_id,
                      hostname=socket.gethostname(), machine_id=self.args.machine_id,
-                     slot_id=self.args.slot_id, slots=1, recovery_version=1))
+                     slot_id=self.args.slot_id, slots=1, recovery_version=1, control_version=1))
         self.draining = False
         self.acknowledge_drain()
         self.flush_report()
@@ -427,6 +436,7 @@ class Worker:
             raise RuntimeError("another Worker owns this identity/output directory")
         root = Path(tempfile.mkdtemp(prefix="run-", dir=str(self.args.output)))
         try:
+            self.maintenance = SlotMaintenance(self.args.output, self.heartbeat)
             # Validate local exit evidence before touching a possibly live slot.
             if self.active_path().exists() and not self.pending_path().exists():
                 journal = json.loads(self.active_path().read_text(encoding="utf-8"))
@@ -454,6 +464,10 @@ class Worker:
                         self.flush_report()
                     if self.draining and self.assigned is None and not self.pending_path().exists():
                         return
+                    if self.assigned is None and not self.pending_path().exists():
+                        if self.maintenance.run_if_idle(self.adapter):
+                            self.heartbeat()  # Only after update process exit and slot lock release.
+                            continue
                     if self.assigned is not None:
                         self.execute(root)
                     else:

@@ -15,7 +15,7 @@ WorkerServer::WorkerServer(bool persistent)
         store_ptr_ = std::make_unique<StateStore>(
             Config::instance().getString("database.path", ""),
             Config::instance().getInt("database.busy_timeout_ms", 5000));
-    worker_manager_ptr_ = std::make_unique<WorkerManager>();
+    worker_manager_ptr_ = std::make_unique<WorkerManager>(store_ptr_.get());
     registry_ptr_ = std::make_unique<WorkerConnectionRegistry>();
     dispatcher_ptr_ = std::make_unique<NetworkWorkerDispatcher>(*registry_ptr_);
     scheduler_ptr_ = std::make_unique<Scheduler>(*worker_manager_ptr_);

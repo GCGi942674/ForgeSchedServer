@@ -25,7 +25,8 @@ scheduler.task_timeout_sec=10800
 cache.regression.enabled=false
 cache.regression.max_entries=1000
 cache.regression.ttl_seconds=5
-gui.catalog_file=./intranet-report/gui-catalog.json
+# Optional legacy/offline import only; the GUI now reads the Server catalog API.
+gui.catalog_file=
 gui.refresh_seconds=5
 gui.log_page_bytes=8192
 tools.server_binary=./build/bin/gcrp_server

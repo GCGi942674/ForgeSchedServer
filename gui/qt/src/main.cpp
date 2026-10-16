@@ -35,9 +35,12 @@ int main(int argc,char** argv) {
     parser.addOption({"self-test",QStringLiteral("自动检查窗口与目录树（需 --demo）")});
     parser.addOption({"config",QStringLiteral("共享配置文件"),"path"});
     parser.addOption({"probe",QStringLiteral("只读检查 Server 能力、工作机和任务接口")});
-    parser.addOption({"screenshot",QStringLiteral("保存演示窗口截图；需 --demo"),"path"});parser.process(app);
+    parser.addOption({"catalog-probe",QStringLiteral("只读验证 Server 目录 API 与实际 GUI 控件加载")});
+    parser.addOption({"snapshot-probe",QStringLiteral("只读验证非空任务列表摘要和 Qt 批次控件")});
+    parser.addOption({"screenshot",QStringLiteral("保存演示窗口截图；需 --demo"),"path"});
+    parser.addOption({"review-dir",QStringLiteral("保存全部页面和关键弹窗的离屏截图；需 --demo"),"path"});parser.process(app);
     const bool demo=parser.isSet("demo");
-    if((parser.isSet("self-test")||parser.isSet("screenshot"))&&!demo){std::fprintf(stderr,"--self-test/--screenshot requires --demo\n");return 64;}
+    if((parser.isSet("self-test")||parser.isSet("screenshot")||parser.isSet("review-dir"))&&!demo){std::fprintf(stderr,"--self-test/--screenshot/--review-dir requires --demo\n");return 64;}
     try {
         const auto config=demo?GuiSettings{}:settings(parser.isSet("config")?parser.value("config"):findConfig());
         if(parser.isSet("probe")) {
@@ -57,7 +60,20 @@ int main(int argc,char** argv) {
         }
         MainWindow window(config,demo);
         window.show();
+        if(parser.isSet("snapshot-probe")){
+            if(demo){std::fprintf(stderr,"--snapshot-probe cannot use --demo\n");return 64;}
+            QTimer poll;poll.setInterval(100);QObject::connect(&poll,&QTimer::timeout,&window,[&]{if(window.snapshotProbe())app.exit(0);});poll.start();
+            QTimer::singleShot(30000,&window,[&]{std::fprintf(stderr,"QT_SNAPSHOT_PROBE FAIL\n");app.exit(1);});return app.exec();
+        }
+        if(parser.isSet("catalog-probe")){
+            if(demo){std::fprintf(stderr,"--catalog-probe cannot use --demo\n");return 64;}
+            QTimer poll;poll.setInterval(100);
+            QObject::connect(&poll,&QTimer::timeout,&window,[&]{if(window.catalogProbe())app.exit(0);});poll.start();
+            QTimer::singleShot(30000,&window,[&]{std::fprintf(stderr,"QT_CATALOG_PROBE FAIL: directory not ready; check Server catalog settings\n");app.exit(1);});
+            return app.exec();
+        }
         if(parser.isSet("self-test"))QTimer::singleShot(0,&window,[&]{const bool ok=window.selfTest();std::fprintf(stderr,"QT_GUI_SELF_TEST %s\n",ok?"PASS":"FAIL");app.exit(ok?0:1);});
+        else if(parser.isSet("review-dir"))QTimer::singleShot(200,&window,[&]{const bool ok=window.saveReview(parser.value("review-dir"));app.exit(ok?0:1);});
         else if(parser.isSet("screenshot"))QTimer::singleShot(200,&window,[&]{const bool ok=window.grab().save(parser.value("screenshot"));app.exit(ok?0:1);});
         return app.exec();
     }catch(const std::exception& e){std::fprintf(stderr,"GUI: %s\n",e.what());QMessageBox::critical(nullptr,QStringLiteral("GUI 配置错误"),QString::fromUtf8(e.what()));return 1;}

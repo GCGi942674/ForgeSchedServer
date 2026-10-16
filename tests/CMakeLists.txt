@@ -6,6 +6,10 @@ add_test(NAME test_run_log_archive COMMAND test_run_log_archive)
 set_tests_properties(test_run_log_archive PROPERTIES TIMEOUT 30)
 
 message(STATUS "External mirror: building available tests only")
+add_executable(test_worker_controls test_worker_controls.cpp)
+target_link_libraries(test_worker_controls PRIVATE gcrp_server_core)
+add_test(NAME test_worker_controls COMMAND test_worker_controls)
+set_tests_properties(test_worker_controls PROPERTIES TIMEOUT 45)
 add_executable(test_role_config test_role_config.cpp)
 target_link_libraries(test_role_config PRIVATE common)
 add_test(NAME test_role_config COMMAND test_role_config)
@@ -49,6 +53,11 @@ add_test(NAME test_client_transport COMMAND test_client_transport)
 set_tests_properties(test_client_transport PROPERTIES TIMEOUT 45)
 
 find_package(Python3 3.6 REQUIRED COMPONENTS Interpreter)
+add_test(NAME test_slot_maintenance COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/test_slot_maintenance.py)
+set_tests_properties(test_slot_maintenance PROPERTIES TIMEOUT 30)
+add_test(NAME test_worker_control_process COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/test_worker_control_process.py $<TARGET_FILE:gcrp_server> ${PROJECT_SOURCE_DIR})
+set_tests_properties(test_worker_control_process PROPERTIES TIMEOUT 150)
 add_executable(test_python_worker test_python_worker.cpp)
 target_link_libraries(test_python_worker PRIVATE gcrp_server_core gcrp_client_api)
 add_test(NAME test_python_worker COMMAND test_python_worker ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/worker/gcrp_worker.py)
@@ -159,6 +168,22 @@ add_executable(test_api_queries test_api_queries.cpp)
 target_link_libraries(test_api_queries PRIVATE gcrp_server_core)
 add_test(NAME test_api_queries COMMAND test_api_queries)
 set_tests_properties(test_api_queries PROPERTIES TIMEOUT 30)
+
+# Test assertions must execute in Release too: several legacy tests use assert
+add_executable(test_gui_catalog test_gui_catalog.cpp)
+target_link_libraries(test_gui_catalog PRIVATE gcrp_server_core)
+add_test(NAME test_gui_catalog COMMAND test_gui_catalog)
+set_tests_properties(test_gui_catalog PROPERTIES TIMEOUT 30)
+if(TARGET gcrp_gui)
+  add_test(NAME test_qt_server_catalog COMMAND ${Python3_EXECUTABLE} -B
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/test_qt_server_catalog.py
+    $<TARGET_FILE:gcrp_server> $<TARGET_FILE:gcrp_gui>)
+  set_tests_properties(test_qt_server_catalog PROPERTIES TIMEOUT 45)
+endif()
+
+add_test(NAME test_service_control COMMAND ${Python3_EXECUTABLE} -B
+  ${PROJECT_SOURCE_DIR}/tests/test_service_control.py)
+set_tests_properties(test_service_control PROPERTIES TIMEOUT 45)
 
 # Test assertions must execute in Release too: several legacy tests use assert
 # for setup operations. Removing those expressions makes the test undefined.

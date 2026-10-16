@@ -14,6 +14,7 @@ struct WorkerRegisterRequest {
     std::string machine_id;
     std::string slot_id;
     bool explicit_identity{false};
+    bool control_v1{false};
     uint32_t slots{0};
 };
 

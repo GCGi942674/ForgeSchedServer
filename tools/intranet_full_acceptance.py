@@ -21,11 +21,12 @@ STAGES = {
     'P15': ('test_regression_service', 'test_sqlite_persistence',
             'test_worker_recovery', 'test_batch_cancel'),
     'P16': ('test_progress_service', 'test_protocol', 'test_client_cli'),
-    'P17': ('test_api_queries', 'test_control_plane'),
+    'P17': ('test_api_queries', 'test_control_plane', 'test_gui_catalog'),
     'LOGS': ('test_run_log_archive', 'test_log_retention',
              'test_pjtest_adapter', 'test_sqlite_worker'),
+    'WORKER_MANAGEMENT': ('test_worker_controls', 'test_slot_maintenance', 'test_worker_control_process'),
 }
-LATE_STAGES = ('P15', 'P16', 'P17', 'LOGS')
+LATE_STAGES = ('P15', 'P16', 'P17', 'LOGS', 'WORKER_MANAGEMENT')
 TEST_LINE = re.compile(r'^\s*\d+/\d+\s+Test\s+#\d+:\s+(\S+)\s+\.+\s*(Passed|\*\*\*\S+)', re.M)
 
 

@@ -203,7 +203,7 @@ def main():
             rig.start_server()
             assert rig.task(third)['status'] == 'SUCCEEDED'
             with sqlite3.connect(str(rig.root / 'state.db')) as db:
-                assert db.execute('PRAGMA user_version').fetchone()[0] == 2
+                assert db.execute('PRAGMA user_version').fetchone()[0] == 3
         except BaseException:
             for path in sorted(rig.root.glob('process-*.log')):
                 print(str(path) + '\n' + path.read_text(errors='replace'), file=sys.stderr)

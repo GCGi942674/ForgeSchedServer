@@ -6,6 +6,7 @@ CTEST ?= $(if $(findstring /,$(CMAKE)),$(dir $(abspath $(CMAKE)))ctest,$(shell c
 PARALLEL_JOBS ?= 32
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
+GUI ?= AUTO
 CMAKE_ARGS ?=
 CTEST_ARGS ?=
 SOURCE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -17,7 +18,7 @@ BUILD_PATH := $(abspath $(BUILD_DIR))
 .PHONY: all release debug test clean help
 
 all:
-	@"$(CMAKE)" -S "$(SOURCE_DIR)" -B "$(BUILD_PATH)" -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) $(CMAKE_ARGS)
+	@"$(CMAKE)" -S "$(SOURCE_DIR)" -B "$(BUILD_PATH)" -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DGCRP_BUILD_QT_GUI=$(GUI) $(CMAKE_ARGS)
 	@"$(CMAKE)" --build "$(BUILD_PATH)" --parallel $(PARALLEL_JOBS)
 
 release: BUILD_TYPE = Release
@@ -44,4 +45,5 @@ help:
 	@echo "CMAKE: internal 3.15.2 path if present, otherwise cmake from PATH"
 	@echo "CTEST: defaults to the selected CMake executable's sibling"
 	@echo "BUILD_DIR: build; BUILD_TYPE: Release; PARALLEL_JOBS: 32"
+	@echo "GUI: AUTO (build if Qt5 is installed); make GUI=ON requires Qt5; GUI=OFF skips GUI"
 	@echo "CMAKE_ARGS and CTEST_ARGS: extra configure/test arguments"

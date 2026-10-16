@@ -1,7 +1,7 @@
 # One-entry intranet acceptance
 
-Use the same GCRP revision and `config/gcrp.conf` on the Server
-and both Worker machines. As in the earlier acceptance run, set
+Use the same GCRP revision, `config/server.conf` on the Server,
+and `config/worker.conf` on both Workers (legacy gcrp.conf remains supported). As in the earlier acceptance run, set
 `smoke.revision`, `smoke.case`, `smoke.target`, the Server address, artifact
 directory and Worker SVN URL for real PJtest execution.
 
@@ -14,6 +14,8 @@ python3 -B -u tools/intranet_full_acceptance.py --offline-only
 This configures, builds and runs the complete CTest suite serially. It checks
 P10 through P17 and the Server/Worker log archive and retention tests. The
 result is `OFFLINE_PASS` only when every registered test passes.
+The WORKER_MANAGEMENT group also tests durable slot policies and real updates
+against a temporary local SVN repository.
 
 For the real three-machine acceptance, start on the Server:
 

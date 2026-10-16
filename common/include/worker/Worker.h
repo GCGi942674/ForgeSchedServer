@@ -5,10 +5,18 @@
 #include <string>
 #include <cstdint>
 #include <chrono>
+#include <memory>
 
 namespace GCRP {
 
 class WorkerManager;
+struct WorkerControl {
+    bool accepting{true};
+    std::string operation_id, scope, state{"IDLE"}, error;
+    bool available() const {
+        return accepting && (state == "IDLE" || state == "SUCCEEDED");
+    }
+};
 
 using WorkerId = std::string;
 
@@ -23,6 +31,9 @@ public:
     WorkerStatus getStatus() const { return status_; }
     uint32_t getTotalSlots() const { return total_slots_; }
     uint32_t getUsedSlots() const { return used_slots_; }
+    const WorkerControl& getControl() const { return *control_; }
+    bool supportsControl() const { return control_supported_; }
+    bool acceptsTasks() const { return control_->available(); }
 
     const auto& getRegisteredAt() const { return registered_at_; }
     const auto& getLastHeartbeat() const { return last_heartbeat_; }
@@ -58,6 +69,8 @@ private:
     std::string machine_id_;
     std::string slot_id_;
     bool explicit_identity_{false};
+    std::shared_ptr<const WorkerControl> control_{std::make_shared<WorkerControl>()};
+    bool control_supported_{false};
     WorkerStatus status_;
 
     uint32_t total_slots_;

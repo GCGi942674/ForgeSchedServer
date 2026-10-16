@@ -141,6 +141,42 @@ class PJtestAdapter:
         if missing:
             raise AdapterError("slot SVN checkout incomplete; missing: " + ", ".join(missing))
 
+    def update_checkout(self, scope, executor, log):
+        """Update only this complete slot, under the same lock as testcase execution."""
+        import xml.etree.ElementTree as ET
+        if scope not in ('test2', 'all') or self.galaxcore_root is None:
+            raise AdapterError('SVN update requires a complete GalaxCore checkout')
+        root = self.galaxcore_root
+        if not (root / '.svn').is_dir() or not (root / 'test2/run.sh').is_file():
+            raise AdapterError('incomplete SVN slot; update refused')
+        fd = os.open(self.work_root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            target = root if scope == 'all' else self.work_root
+            # No revert/cleanup/delete; preserve local modifications and report conflicts.
+            _, code, timeout = executor.run(['svn', 'update', '--non-interactive', '--', str(target)],
+                root, os.environ.copy(), log, log, 7200, grace=self.grace)
+            if code or timeout:
+                raise AdapterError('SVN update failed or timed out; inspect maintenance log')
+            with tempfile.TemporaryFile() as status:
+                _, code, timeout = executor.run(['svn', 'status', '--xml', '--', str(target)],
+                    root, os.environ.copy(), status, log, 120, grace=self.grace)
+                if code or timeout:
+                    raise AdapterError('SVN conflict check failed')
+                status.seek(0)
+                contents = status.read(4 * 1024 * 1024 + 1)
+                if len(contents) > 4 * 1024 * 1024:
+                    raise AdapterError('SVN status exceeds inspection limit')
+                tree = ET.fromstring(contents)
+                for row in tree.iter('wc-status'):
+                    if (row.get('item') in ('conflicted', 'obstructed', 'missing', 'incomplete') or
+                            row.get('props') == 'conflicted' or row.get('tree-conflicted') == 'true'):
+                        raise AdapterError('SVN working copy has conflicts; manual inspection required')
+            if not (root / 'test2/run.sh').is_file():
+                raise AdapterError('SVN update removed required test2 entrypoint')
+        finally:
+            os.close(fd)
+
     def validate(self, task):
         payload = task.get("payload")
         version = payload.get("spec_version") if isinstance(payload, dict) else None

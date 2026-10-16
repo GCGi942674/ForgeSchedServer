@@ -9,8 +9,10 @@
 #include <mutex>
 #include <chrono>
 #include <optional>
+#include <nlohmann/json.hpp>
 
 namespace GCRP {
+class StateStore;
 
 class WorkerManager {
 public:
@@ -25,6 +27,10 @@ public:
     bool heartbeat(const WorkerId& worker_id);
     bool markOffline(const WorkerId& worker_id);
     bool markDraining(const WorkerId& worker_id);
+    void setControlSupported(const WorkerId& id, bool supported);
+    std::optional<nlohmann::json> control(bool machine, const std::string& target,
+        const std::string& action, const std::string& operation_id, const std::string& scope);
+    nlohmann::json managementHeartbeat(const WorkerId&, const nlohmann::json& ack);
 
     bool acquireSlot(const WorkerId& worker_id);
     bool releaseSlot(const WorkerId& worker_id);
@@ -37,7 +43,7 @@ public:
 
     void checkTimeouts(std::chrono::seconds timeout);
 
-    WorkerManager() = default;
+    explicit WorkerManager(StateStore* store = nullptr);
     ~WorkerManager() = default;
 
     WorkerManager(const WorkerManager&) = delete;
@@ -47,6 +53,10 @@ private:
     mutable std::mutex mutex_;
     uint64_t generation_{0};
     std::unordered_map<WorkerId, std::unique_ptr<Worker>> workers_;
+    StateStore* store_;
+    nlohmann::json controls_;
+    std::shared_ptr<const WorkerControl> controlFor(const nlohmann::json&, const WorkerId&, const std::string&) const;
+    void commitControls(nlohmann::json next);
 };
 
 } // namespace GCRP

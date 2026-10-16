@@ -62,6 +62,12 @@ bool fromJson(const nlohmann::json& j, WorkerRegisterRequest& out, ProtocolError
         return false;
     }
 
+    out.control_v1=false;
+    if(j.contains("control_version")){
+        if(!j["control_version"].is_number_unsigned()||j["control_version"]!=1||out.slots!=1){
+            error.message="control v1 requires a single-slot Worker";return false;}
+        out.control_v1=true;
+    }
     return true;
 }
 
@@ -74,6 +80,7 @@ nlohmann::json toJson(const WorkerRegisterRequest& value) {
         j["slot_id"] = value.slot_id;
     }
     j["slots"] = value.slots;
+    if(value.control_v1)j["control_version"]=1;
     return j;
 }
 

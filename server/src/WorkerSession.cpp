@@ -76,6 +76,7 @@ void WorkerSession::handleRequest(const ProtocolMessage& request) {
             return;
         }
         worker_id_ = dto.worker_id;
+        worker_manager_.setControlSupported(dto.worker_id,dto.control_v1);
         recovery_protocol_ = recovering;
         binding_handle_ = *handle;
         LOG_INFO(LogModule::WORKER, "worker registered: " + *worker_id_);

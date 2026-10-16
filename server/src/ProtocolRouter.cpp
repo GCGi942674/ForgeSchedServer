@@ -122,6 +122,26 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
     ProtocolMessage response;
 
     switch (request.type) {
+        case MessageType::CONTROL_WORKERS: {
+            try {
+                const auto& d=request.data;
+                Api::validate(d,{"machine_id","worker_id","action","operation_id","scope"});
+                if(d.contains("machine_id")==d.contains("worker_id"))throw std::invalid_argument("choose one target");
+                const bool machine=d.contains("machine_id");
+                const auto target=Api::text(d,machine?"machine_id":"worker_id",256);
+                const auto action=Api::text(d,"action",16), id=Api::text(d,"operation_id",128);
+                if(!RunLogArchive::validRunId(id)||(action!="pause"&&action!="resume"&&action!="update"))
+                    throw std::invalid_argument("invalid control action or operation_id");
+                const auto scope=Api::text(d,"scope",16);
+                if(action=="update"?(scope!="test2"&&scope!="all"):d.contains("scope"))
+                    throw std::invalid_argument("update scope must be test2 or all; other actions have no scope");
+                auto result=worker_manager_.control(machine,target,action,id,scope);
+                if(!result)return buildResponse(request,ResponseCode::NOT_FOUND,"target not registered");
+                if(action=="resume")scheduling_driver_.requestSchedule();
+                return buildResponse(request,ResponseCode::OK,"accepted",*result);
+            }catch(const std::invalid_argument& error){return buildResponse(request,ResponseCode::INVALID_REQUEST,error.what());}
+             catch(const std::logic_error& error){return buildResponse(request,ResponseCode::INVALID_STATE,error.what());}
+        }
         case MessageType::LOG_APPEND:
         case MessageType::QUERY_LOGS:
         case MessageType::READ_LOG: {
@@ -168,6 +188,15 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                     d["complete"].get<bool>()));
             } catch (const std::invalid_argument& error) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, error.what());
+            }
+        }
+        case MessageType::QUERY_CATALOG: {
+            try {
+                return buildResponse(request, ResponseCode::OK, "ok", gui_catalog_.query(request.data));
+            } catch (const std::invalid_argument& e) {
+                return buildResponse(request, ResponseCode::INVALID_REQUEST, e.what());
+            } catch (const std::logic_error& e) {
+                return buildResponse(request, ResponseCode::INVALID_STATE, e.what());
             }
         }
         case MessageType::QUERY_TASKS:
@@ -340,7 +369,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!success) {
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid worker registration");
             }
-
+            worker_manager_.setControlSupported(register_req.worker_id,register_req.control_v1);
             return buildResponse(request, ResponseCode::OK, "ok");
         }
 
@@ -388,8 +417,13 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!success) {
                 return buildResponse(request, ResponseCode::NOT_FOUND, "worker not found");
             }
-            scheduling_driver_.requestSchedule();
-            return buildResponse(request, ResponseCode::OK, "ok");
+            try {
+                const auto management=worker_manager_.managementHeartbeat(heartbeat_req.worker_id,
+                    request.data.value("maintenance_ack",nlohmann::json(nullptr)));
+                scheduling_driver_.requestSchedule();
+                return buildResponse(request, ResponseCode::OK, "ok",management);
+            }catch(const std::invalid_argument& error){return buildResponse(request,ResponseCode::INVALID_REQUEST,error.what());}
+             catch(const std::logic_error& error){return buildResponse(request,ResponseCode::INVALID_STATE,error.what());}
         }
 
         case GCRP::Protocol::MessageType::TASK_START: {
