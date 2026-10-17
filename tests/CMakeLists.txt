@@ -1,6 +1,10 @@
 # External mirror subset: these are the existing tests, not the missing
 # internal GCRP acceptance suite.
 add_executable(test_run_log_archive test_run_log_archive.cpp)
+add_executable(test_task_groups test_task_groups.cpp)
+target_link_libraries(test_task_groups PRIVATE gcrp_server_core)
+add_test(NAME test_task_groups COMMAND test_task_groups)
+set_tests_properties(test_task_groups PROPERTIES TIMEOUT 90)
 target_link_libraries(test_run_log_archive PRIVATE gcrp_server_core)
 add_test(NAME test_run_log_archive COMMAND test_run_log_archive)
 set_tests_properties(test_run_log_archive PROPERTIES TIMEOUT 30)
@@ -53,6 +57,10 @@ add_test(NAME test_client_transport COMMAND test_client_transport)
 set_tests_properties(test_client_transport PROPERTIES TIMEOUT 45)
 
 find_package(Python3 3.6 REQUIRED COMPONENTS Interpreter)
+add_test(NAME test_log_io_process COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/fixtures/test_log_io_process.py $<TARGET_FILE:gcrp_server>)
+set_tests_properties(test_log_io_process PROPERTIES TIMEOUT 45)
+add_test(NAME test_hardening COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/test_hardening.py)
+set_tests_properties(test_hardening PROPERTIES TIMEOUT 45)
 add_test(NAME test_slot_maintenance COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/test_slot_maintenance.py)
 set_tests_properties(test_slot_maintenance PROPERTIES TIMEOUT 30)
 add_test(NAME test_worker_control_process COMMAND ${Python3_EXECUTABLE} -B

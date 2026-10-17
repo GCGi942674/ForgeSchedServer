@@ -136,7 +136,8 @@ std::optional<RollbackQuery> RollbackQuery::parse(const nlohmann::json& request)
 }
 
 nlohmann::json ProgressService::queryProgress(const ProgressQuery& query) const {
-    const auto snapshot = scheduler_.taskSnapshot();
+    std::pair<uint64_t,std::vector<Task>> snapshot;
+    snapshot.first=scheduler_.visitTasks([&](const Task& task){if(task.getTarget()==query.target&&(query.flow.empty()||stringField(task.getPayload(),"flow")==query.flow))snapshot.second.push_back(task);});
     const auto revisions = collect(snapshot.second, query.target, query.flow);
     nlohmann::json rows = nlohmann::json::array();
     bool has_more = false;
@@ -177,7 +178,8 @@ nlohmann::json ProgressService::queryProgress(const ProgressQuery& query) const 
 }
 
 nlohmann::json ProgressService::queryRollbacks(const RollbackQuery& query) const {
-    const auto snapshot = scheduler_.taskSnapshot();
+    std::pair<uint64_t,std::vector<Task>> snapshot;
+    snapshot.first=scheduler_.visitTasks([&](const Task& task){const auto revision=numericRevision(task.getRevision());if(task.getTarget()==query.target&&(revision==query.from_revision||revision==query.to_revision)&&(query.flow.empty()||stringField(task.getPayload(),"flow")==query.flow))snapshot.second.push_back(task);});
     const auto revisions = collect(snapshot.second, query.target, query.flow);
     const auto old = revisions.find(query.from_revision);
     const auto current = revisions.find(query.to_revision);

@@ -1,4 +1,5 @@
 #include "ConsoleSupport.h"
+#include "CaseListImport.h"
 
 void MainWindow::compareDemoDates() {
     regressionTable_->setRowCount(0);if(dateA_->date()==dateB_->date())return;
@@ -13,6 +14,22 @@ void MainWindow::compareDemoDates() {
 }
 
 bool MainWindow::selfTest() {
+    // Even an older Server advertising controls must not re-enable admin UI.
+    const auto previousOperations=operations_;const bool previousDemo=demo_;
+    demo_=false;operations_.insert("control_workers");showWorkers();
+    for(auto button:hostControlButtons_)if(button->isEnabled())return false;
+    for(int row=0;row<slotsTable_->rowCount();++row)if(auto controls=slotsTable_->cellWidget(row,4))
+        for(auto button:controls->findChildren<QPushButton*>())if(button->isEnabled())return false;
+    demo_=previousDemo;operations_=previousOperations;showWorkers();
+    const auto firstCase=QString::fromStdString(catalog_["cases"][0].get<std::string>());
+    if(importCaseList(casesTree_,QByteArray("\xef\xbb\xbf")+firstCase.toUtf8()+"\r\n\n"+firstCase.toUtf8())!=1||selectedCases(casesTree_).size()!=1)return false;
+    auto selectedBefore=selectedCases(casesTree_);
+    for(const auto& invalid:QList<QByteArray>{QByteArray(),QByteArray("\xff"),firstCase.toUtf8()+"\nmissing/run.tcl",QByteArray("../run.tcl"),QByteArray("{}")}){
+        bool rejected=false;try{importCaseList(casesTree_,invalid);}catch(const std::exception&){rejected=true;}
+        if(!rejected||selectedCases(casesTree_)!=selectedBefore)return false;
+    }
+    auto windowsCase=firstCase;windowsCase.replace('/','\\');
+    if(importCaseList(casesTree_,("./"+windowsCase+"\r").toUtf8())!=1)return false;
     if(csvCell("=2+2")!="\"'=2+2\""||csvCell("a\"b")!="\"a\"\"b\"")return false;
     if(!demo_||flowOptions_->topLevelItemCount()<19||pages_->count()!=4||taskMetrics_.size()!=4)return false;
     const auto key=flow_->currentText().toStdString();const auto defaults=catalog_["templates"][key],before=selectedFlowConfig();
@@ -76,5 +93,6 @@ bool MainWindow::snapshotProbe() const {
     size_t displayed=0;for(int i=0;i<tasksTree_->topLevelItemCount();++i)displayed+=tasksTree_->topLevelItem(i)->childCount();
     if(displayed!=tasks_.size())return false;
     for(const auto& task:tasks_){if(!task.contains("created_at_ms")||!task.contains("payload")||!task["payload"].contains("case")||!task["payload"].contains("context")||!task["payload"]["context"].contains("source"))return false;}
-    std::fprintf(stderr,"QT_SNAPSHOT_PROBE PASS tasks=%zu batches=%d\n",tasks_.size(),tasksTree_->topLevelItemCount());return true;
+    size_t cases=0;for(const auto& task:tasks_)cases+=task.contains("group_summary")?task["group_summary"]["total"].get<size_t>():1;
+    std::fprintf(stderr,"QT_SNAPSHOT_PROBE PASS tasks=%zu batches=%d\n",cases,tasksTree_->topLevelItemCount());return true;
 }

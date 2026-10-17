@@ -109,6 +109,7 @@ void MainWindow::note(const QString& text, bool error) {
 void MainWindow::fetchList(const std::string& type,const Json& filter,const Json& cursor,
     std::shared_ptr<Json> rows,std::string instance,std::function<void(bool,Json,QString)> done,int page,uint64_t generation) {
     Json data=filter;data["limit"]=50;if(!cursor.is_null())data[type=="query_workers"?"after":"before_task_id"]=cursor;
+    if(type=="query_tasks"&&generation)data["snapshot_generation"]=generation;
     rpc_.request(type,data,[this,type,filter,rows,instance,done,page,generation](RpcReply r){
         if(!r.ok){done(false,{},r.error);return;}
         if(!instance.empty()&&instance!=r.instance){done(false,{},QStringLiteral("Server 已重启，请重新刷新；保留原数据"));return;}
@@ -118,7 +119,7 @@ void MainWindow::fetchList(const std::string& type,const Json& filter,const Json
             const auto& items=r.result.at("items");if(!items.is_array())throw std::runtime_error("items must be array");
             for(const auto& row:items)rows->push_back(row);
             if(r.result.value("has_more",false)){
-                if(page>=99){done(true,*rows,QStringLiteral("仅加载最近 5000 条；未加载条目未计入当前视图"));return;}
+                if(page>=9999){done(false,{},QStringLiteral("查询超过 500000 条，请缩小范围；未导出不完整结果"));return;}
                 auto next=r.result.at(type=="query_workers"?"next_after":"next_before_task_id");
                 if(next.is_null()||items.empty())throw std::runtime_error("invalid cursor");
                 fetchList(type,filter,next,rows,r.instance,done,page+1,current);
@@ -152,7 +153,7 @@ void MainWindow::refresh() {
       [this](bool ok,Json rows,QString warning){
         if(!ok){loading_=false;invalidateSnapshots(true,true);note(QStringLiteral("连接中断或查询失败：")+warning,true);return;}
         workers_=std::move(rows);workersStale_=false;workerUpdated_.restart();updateFreshness();showWorkers();
-        fetchList("query_tasks",Json::object(),nullptr,std::make_shared<Json>(Json::array()),{},
+        fetchList("query_tasks",{{"view","groups"}},nullptr,std::make_shared<Json>(Json::array()),{},
           [this,warning](bool success,Json rows,QString taskWarning){loading_=false;if(!success){invalidateSnapshots(false,true);note(QStringLiteral("任务查询失败：")+taskWarning,true);return;}tasks_=std::move(rows);tasksStale_=false;taskUpdated_.restart();updateFreshness();showTasks();note(QStringLiteral("已连接 · 更新于 ")+QDateTime::currentDateTime().toString("HH:mm:ss")+" "+warning+taskWarning);});
     });
 }

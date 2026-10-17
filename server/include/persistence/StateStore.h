@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <functional>
 
 struct sqlite3;
 
@@ -24,7 +25,12 @@ public:
     StateStore(const StateStore&) = delete;
     StateStore& operator=(const StateStore&) = delete;
 
-    std::vector<PersistedTask> loadTasks() const;
+    std::vector<PersistedTask> loadTasks(TaskId id = 0, bool active_only = false,
+                                         const std::string& batch_id = "") const;
+    std::pair<TaskId,uint64_t> highWaterMarks() const;
+    nlohmann::json statusCounts() const;
+    void visitTasks(const std::function<void(Task&&,uint64_t)>& visitor,TaskId id=0,
+                    bool active_only=false,const std::string& batch_id="") const;
     std::vector<std::string> loadStoppedBatches() const;
     nlohmann::json loadWorkerControls() const;
     void saveWorkerControls(const nlohmann::json&);

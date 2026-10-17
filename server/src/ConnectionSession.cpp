@@ -47,6 +47,14 @@ void ConnectionSession::handleClose() {
     worker_.handleClose();
 }
 
+bool ConnectionSession::authorizeLog(const ProtocolMessage& request) {
+    if(request.type==MessageType::LOG_APPEND)
+        return role_==ConnectionRole::WORKER&&worker_.permitsLogUpload(request);
+    if(request.type!=MessageType::QUERY_LOGS&&request.type!=MessageType::READ_LOG)return false;
+    if(role_==ConnectionRole::WORKER)return false;
+    role_=ConnectionRole::CLIENT;return true;
+}
+
 void ConnectionSession::reply(uint64_t id, ResponseCode code, const std::string& message) {
     ProtocolMessage response;
     response.type = MessageType::RESPONSE;

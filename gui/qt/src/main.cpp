@@ -1,29 +1,19 @@
 #include "MainWindow.h"
 #include <QApplication>
 #include <QCommandLineParser>
-#include <QDir>
-#include <QFile>
-#include <QTextStream>
-#include <QMessageBox>
+#include <QHostAddress>
 #include <cstdio>
 
 namespace {
-QString findConfig() {
-    const auto explicitPath=QString::fromLocal8Bit(qgetenv("GCRP_CONFIG"));
-    if(qEnvironmentVariableIsSet("GCRP_CONFIG"))return explicitPath;
-    for(const auto& base:{QDir::currentPath(),QCoreApplication::applicationDirPath()}){
-        QDir directory(base);for(int i=0;i<8;++i){for(const auto& name:{"server.conf","gcrp.conf"}){auto path=directory.filePath(QString("config/")+name);if(QFile::exists(path))return path;}if(!directory.cdUp())break;}
-    }return {};
-}
-GuiSettings settings(const QString& path) {
-    QFile file(path);if(path.isEmpty()||!file.open(QIODevice::ReadOnly))throw std::runtime_error("cannot read config/server.conf (or legacy gcrp.conf); use --config");
-    QTextStream stream(&file);stream.setCodec("UTF-8");QMap<QString,QString> values;
-    while(!stream.atEnd()){auto line=stream.readLine().trimmed();if(line.isEmpty()||line.startsWith('#'))continue;auto at=line.indexOf('=');if(at<1)throw std::runtime_error("malformed config line");values[line.left(at).trimmed()]=line.mid(at+1).trimmed();}
-    auto integer=[&values](const QString& key,int fallback,int low,int high){bool ok=false;int value=values.contains(key)?values[key].toInt(&ok):fallback;if(!values.contains(key))ok=true;if(!ok||value<low||value>high)throw std::runtime_error(("invalid "+key).toStdString());return value;};
-    GuiSettings result;result.host=values.value("network.server_ip");if(result.host.isEmpty())throw std::runtime_error("network.server_ip is required");
-    result.port=quint16(integer("server.port",0,1,65535));result.timeout=integer("network.timeout_ms",5000,100,120000);
-    result.refreshSeconds=integer("gui.refresh_seconds",5,1,3600);result.logPageBytes=integer("gui.log_page_bytes",8192,1,16384);
-    result.catalogFile=values.value("gui.catalog_file");result.target=values.value("smoke.target");return result;
+GuiSettings settings(const QCommandLineParser& parser) {
+    if(!parser.positionalArguments().isEmpty())throw std::runtime_error("unexpected argument; use --ip ADDRESS --port PORT");
+    if(!parser.isSet("ip")||!parser.isSet("port"))throw std::runtime_error("required: --ip ADDRESS --port PORT");
+    GuiSettings result;result.host=parser.value("ip");QHostAddress address;
+    if(!address.setAddress(result.host)||address.isNull()||address==QHostAddress(QHostAddress::AnyIPv4)||address==QHostAddress(QHostAddress::AnyIPv6))throw std::runtime_error("--ip must be a valid non-wildcard IPv4 or IPv6 address");
+    const auto portText=parser.value("port");bool ok=false;const auto port=portText.toUInt(&ok);
+    for(const auto c:portText)if(c<'0'||c>'9')ok=false;
+    if(!ok||port<1||port>65535)throw std::runtime_error("--port must be an integer between 1 and 65535");
+    result.port=quint16(port);return result;
 }
 }
 int main(int argc,char** argv) {
@@ -33,7 +23,8 @@ int main(int argc,char** argv) {
     parser.addHelpOption();parser.addVersionOption();
     parser.addOption({"demo",QStringLiteral("离线演示，不连接 Server")});
     parser.addOption({"self-test",QStringLiteral("自动检查窗口与目录树（需 --demo）")});
-    parser.addOption({"config",QStringLiteral("共享配置文件"),"path"});
+    parser.addOption({"ip",QStringLiteral("Server IP 地址（必填，不读取配置文件）"),"address"});
+    parser.addOption({"port",QStringLiteral("Server TCP 端口（必填：1–65535）"),"port"});
     parser.addOption({"probe",QStringLiteral("只读检查 Server 能力、工作机和任务接口")});
     parser.addOption({"catalog-probe",QStringLiteral("只读验证 Server 目录 API 与实际 GUI 控件加载")});
     parser.addOption({"snapshot-probe",QStringLiteral("只读验证非空任务列表摘要和 Qt 批次控件")});
@@ -42,7 +33,7 @@ int main(int argc,char** argv) {
     const bool demo=parser.isSet("demo");
     if((parser.isSet("self-test")||parser.isSet("screenshot")||parser.isSet("review-dir"))&&!demo){std::fprintf(stderr,"--self-test/--screenshot/--review-dir requires --demo\n");return 64;}
     try {
-        const auto config=demo?GuiSettings{}:settings(parser.isSet("config")?parser.value("config"):findConfig());
+        const auto config=demo?GuiSettings{}:settings(parser);
         if(parser.isSet("probe")) {
             if(demo){std::fprintf(stderr,"--probe cannot use --demo\n");return 64;}
             RpcClient rpc;rpc.configure(config.host,config.port,config.timeout);
@@ -76,5 +67,5 @@ int main(int argc,char** argv) {
         else if(parser.isSet("review-dir"))QTimer::singleShot(200,&window,[&]{const bool ok=window.saveReview(parser.value("review-dir"));app.exit(ok?0:1);});
         else if(parser.isSet("screenshot"))QTimer::singleShot(200,&window,[&]{const bool ok=window.grab().save(parser.value("screenshot"));app.exit(ok?0:1);});
         return app.exec();
-    }catch(const std::exception& e){std::fprintf(stderr,"GUI: %s\n",e.what());QMessageBox::critical(nullptr,QStringLiteral("GUI 配置错误"),QString::fromUtf8(e.what()));return 1;}
+    }catch(const std::exception& e){std::fprintf(stderr,"GUI: %s\nUsage: gcrp_gui --ip ADDRESS --port PORT\n",e.what());return 64;}
 }

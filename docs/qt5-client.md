@@ -1,5 +1,9 @@
 # C++ / Qt5 desktop client — first native version
 
+> Historical first-version notes. Current behavior and build instructions are in
+> [Qt console v3](qt-ui-v3.md). Live startup now requires
+> `gcrp_gui --ip 192.168.10.11 --port 8080`; the GUI no longer reads configuration files.
+
 The GUI is optional. Default Server builds do not require Qt. It has a standalone
 CMake 3.15.2 entry in `gui/qt`, requiring C++17 and Qt 5.8+ Core/Widgets/Network.
 No browser engine, QML, Python GUI, SQLite or Server binaries are needed to build it.
@@ -95,7 +99,7 @@ as a shell command. The GUI's target field remains explicit rather than guessing
 device metadata for arbitrary directory structures.
 
 ```sh
-./build/gui/bin/gcrp_gui --config config/gcrp.conf
+./build/gui/bin/gcrp_gui --ip 192.168.10.11 --port 8080
 ```
 
 The address and timeout come from `network.server_ip`, `server.port` and

@@ -7,6 +7,22 @@
 
 using namespace GCRP::Protocol;
 
+namespace {
+struct PendingLogReply {
+    std::shared_ptr<Connection> connection;
+    explicit PendingLogReply(std::shared_ptr<Connection> value):connection(std::move(value)){connection->incPendingTasks();}
+    ~PendingLogReply(){connection->decPendingTasks();}
+};
+void sendLogResponse(const std::shared_ptr<Connection>& conn,const ProtocolMessage& response){
+    std::string encoded;ProtocolError error;
+    if(ProtocolCodec::encode(response,encoded,error))conn->sendPacket(MessageCodec::encode(encoded));
+}
+ProtocolMessage logFailure(uint64_t id,const char* message){
+    ProtocolMessage response;response.type=MessageType::RESPONSE;response.request_id=id;
+    response.data={{"code",4},{"message",message},{"result",nullptr}};return response;
+}
+}
+
 namespace GCRP {
 
 WorkerServer::WorkerServer(bool persistent)
@@ -58,6 +74,18 @@ WorkerServer::WorkerServer(bool persistent)
             }
         });
     }
+    try{
+        for(int i=0;i<2;++i)log_threads_.emplace_back([this]{
+            for(;;){std::function<void()> job;{
+                std::unique_lock<std::mutex> lock(log_mutex_);log_cv_.wait(lock,[this]{return log_stopping_||!log_jobs_.empty();});
+                if(log_jobs_.empty()&&log_stopping_)return;job=std::move(log_jobs_.front());log_jobs_.pop_front();
+            }try{job();}catch(...){/* The requester times out and retries; keep the I/O worker alive. */}}
+        });
+    }catch(...){
+        {std::lock_guard<std::mutex> lock(log_mutex_);log_stopping_=true;}log_cv_.notify_all();
+        for(auto& thread:log_threads_)if(thread.joinable())thread.join();
+        {std::lock_guard<std::mutex> lock(liveness_mutex_);stopping_=true;}liveness_cv_.notify_all();if(liveness_thread_.joinable())liveness_thread_.join();throw;
+    }
 }
 
 WorkerServer::~WorkerServer() {
@@ -67,6 +95,8 @@ WorkerServer::~WorkerServer() {
     }
     liveness_cv_.notify_all();
     if (liveness_thread_.joinable()) liveness_thread_.join();
+    {std::lock_guard<std::mutex> lock(log_mutex_);log_stopping_=true;}log_cv_.notify_all();
+    for(auto& thread:log_threads_)if(thread.joinable())thread.join();
 }
 
 void WorkerServer::attach(EchoServer& transport) {
@@ -78,6 +108,17 @@ void WorkerServer::attach(EchoServer& transport) {
             sessions_.emplace(conn.get(), std::move(session));
         },
         [this](const std::shared_ptr<Connection>& conn, const std::string& message) {
+            ProtocolMessage request;ProtocolError error;
+            if(ProtocolCodec::decode(message,request,error)&&
+                (request.type==MessageType::LOG_APPEND||request.type==MessageType::QUERY_LOGS||request.type==MessageType::READ_LOG)){
+                bool permitted=false;{std::lock_guard<std::mutex> lock(session_mutex_);auto it=sessions_.find(conn.get());if(it!=sessions_.end())permitted=it->second->authorizeLog(request);}
+                if(permitted){
+                    bool queued=false;{std::lock_guard<std::mutex> lock(log_mutex_);
+                        if(!log_stopping_&&log_jobs_.size()<64){auto lease=std::make_shared<PendingLogReply>(conn);log_jobs_.push_back([this,conn,request,lease]{try{sendLogResponse(conn,router_ptr_->handle(request));}catch(...){sendLogResponse(conn,logFailure(request.request_id,"log I/O failed; retry later"));}});queued=true;}
+                    }
+                    if(queued)log_cv_.notify_one();else sendLogResponse(conn,logFailure(request.request_id,"log I/O queue full; retry later"));return;
+                }
+            }
             std::lock_guard<std::mutex> lock(session_mutex_);
             auto it = sessions_.find(conn.get());
             if (it != sessions_.end()) it->second->onMessage(message);

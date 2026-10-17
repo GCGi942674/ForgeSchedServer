@@ -1,4 +1,5 @@
 #include "ConsoleSupport.h"
+#include "CaseListImport.h"
 
 QWidget* MainWindow::workersPage() {
     auto widget=page(QStringLiteral("工作机状态"),QStringLiteral("按物理服务器管理子 slot；停止接单不会中断运行中的 testcase。"));
@@ -118,8 +119,17 @@ QWidget* MainWindow::addPage() {
     auto hint=new QLabel(QStringLiteral("每次提交生成独立批次并加入队列。同优先级按服务端接收顺序调度，不锁住其他用户的界面。"));hint->setWordWrap(true);hint->setObjectName("notice");formBox->addWidget(hint);
     auto reload=new QPushButton(QStringLiteral("从 Server 刷新目录 / ZIP / 模板"));formBox->addWidget(reload);
     connect(reload,&QPushButton::clicked,this,[this]{if(demo_)loadCatalog();else if(operations_.contains("query_catalog"))loadServerCatalog(0,0,nullptr,{},true);else note(QStringLiteral("Server 不支持 query_catalog"),true);});
-    auto importButton=new QPushButton(QStringLiteral("兼容旧版：导入离线清单…"));importButton->setProperty("kind","quiet");formBox->addWidget(importButton);
-    connect(importButton,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getOpenFileName(this,QStringLiteral("导入 Server 目录清单"),{},"JSON (*.json)");if(!path.isEmpty()){settings_.catalogFile=path;loadCatalog();}});
+    auto importButton=new QPushButton(QStringLiteral("导入测试案例列表…"));importButton->setProperty("kind","quiet");formBox->addWidget(importButton);
+    importButton->setToolTip(QStringLiteral("每行一个相对于 test2 的 run.tcl 路径；全部匹配后替换当前勾选，不自动提交。支持任意文件扩展名。"));
+    connect(importButton,&QPushButton::clicked,this,[this]{
+        if(catalogLoading_||submitting_){note(QStringLiteral("目录加载或任务提交中，请稍后导入。"),true);return;}
+        auto path=QFileDialog::getOpenFileName(this,QStringLiteral("导入测试案例列表"),{},QStringLiteral("所有文件 (*)"));if(path.isEmpty())return;
+        try{QFile file(path);if(!file.open(QIODevice::ReadOnly))throw std::runtime_error("无法打开测试案例列表文件");
+            auto bytes=file.read(8*1024*1024+1);if(file.error()!=QFileDevice::NoError)throw std::runtime_error("读取测试案例列表失败");
+            const int count=importCaseList(casesTree_,bytes);caseSearch_->clear();filterCases();
+            note(QStringLiteral("已导入并勾选 %1 个测试案例（替换原勾选，未提交任务）。").arg(count));
+        }catch(const std::exception& error){QMessageBox::warning(this,QStringLiteral("测试案例列表导入失败"),QString::fromUtf8(error.what())+QStringLiteral("\n原有勾选保持不变。"));}
+    });
     catalogStatus_=new QLabel(QStringLiteral("等待 Server 目录，无需在 GUI 主机部署 test2 或 ZIP。"));catalogStatus_->setWordWrap(true);catalogStatus_->setTextFormat(Qt::PlainText);catalogStatus_->setObjectName("muted");formBox->addWidget(catalogStatus_);
     formBox->addStretch();submit_=new QPushButton(QStringLiteral("预览并提交"));submit_->setProperty("kind","primary");submit_->setEnabled(demo_);
     connect(submit_,&QPushButton::clicked,this,[this]{submitBatch();});connect(casesTree_,&QTreeWidget::itemChanged,this,[this]{selection_->setText(QStringLiteral("已选择 %1 个 testcase").arg(selectedCases(casesTree_).size()));});

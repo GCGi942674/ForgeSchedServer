@@ -1,5 +1,4 @@
-"""Real TCP, Worker and local SVN update fixture. No GalaxCore installation required."""
-import json
+"""Real TCP denial of unauthenticated administration; ordinary work still runs."""
 import os
 from pathlib import Path
 import socket
@@ -7,138 +6,82 @@ import subprocess
 import sys
 import tempfile
 import time
-
 from test_sqlite_worker import request, wait_server, stop
 
 
-def eventually(check, seconds=35):
-    deadline = time.monotonic() + seconds
-    last = None
-    while time.monotonic() < deadline:
-        last = check()
-        if last:
-            return last
+def eventually(check):
+    deadline=time.monotonic()+20
+    while time.monotonic()<deadline:
+        if check():
+            return
         time.sleep(.05)
-    raise AssertionError('condition timed out: ' + repr(last))
+    raise AssertionError('condition timed out')
 
 
-def main():
-    server_binary, project = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
-    with tempfile.TemporaryDirectory(prefix='gcrp-management-') as temporary:
-        base = Path(temporary)
-        subprocess.check_call([sys.executable, '-B', str(project / 'tests/fixtures/pjtest/setup.py'), str(base)], stdout=subprocess.DEVNULL)
-        (base / 'artifacts/GalaxCore_58231.zip.manifest.json').unlink()
-        script = base / 'slot/test2/run.sh'
-        script.write_text(script.read_text().replace('case_dir=$(dirname', 'sleep 4\ncase_dir=$(dirname'))
-        repository = base / 'repository'
-        def svn(*args):
-            subprocess.run(['svn', '--non-interactive', *map(str, args)], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        subprocess.check_call(['svnadmin', 'create', str(repository)])
-        svn('import', '-m', 'fixture', base / 'slot', repository.as_uri())
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1', 0))
-            port = probe.getsockname()[1]
-        config = base / 'settings.conf'
-        template = base / 'templates'
-        template.mkdir()
-        (template / 'route.json').write_text(json.dumps({'flow_config': {'route_design': 1, 'original': 1}}))
-        config.write_text('server.bind_ip=127.0.0.1\nserver.port={}\nnetwork.server_ip=127.0.0.1\n'
-            'server.io_threads=1\nserver.worker_threads=2\nlog.level=ERROR\nlog.dir={}\n'
-            'database.path={}\nserver.templates_dir={}\nserver.log_archive_root={}\n'
-            'worker.slots_root={}\nworker.svn_url={}\nworker.artifact_root={}\nworker.output_dir={}\n'
-            'worker.reconnect_seconds=0.1\nworker.terminate_grace_seconds=0.1\n'.format(
-                port, base / 'logs', base / 'state.db', template, base / 'archive', base / 'slots',
-                repository.as_uri(), base / 'artifacts', base / 'output'))
-        environment = dict(os.environ, GCRP_CONFIG=str(config))
-        server = worker = None
-        with (base / 'server.log').open('w+') as server_log, (base / 'worker.log').open('w+') as worker_log:
-            def start_server():
-                process = subprocess.Popen([str(server_binary)], env=environment, cwd=str(base),
-                                           stdout=server_log, stderr=subprocess.STDOUT)
-                wait_server(port, process)
-                return process
-            def call(kind, data):
-                reply = request(port, kind, data)
-                assert reply['code'] == 0, reply
-                return reply['result']
-            def worker_row():
-                rows = call('query_workers', {})['items']
-                return next((row for row in rows if row['worker_id'] == 'fixture-slot1'), None)
-            def control(action, key, **extra):
-                return call('control_workers', dict(machine_id='fixture', action=action, operation_id=key, **extra))
-            def submit():
-                return call('submit_task', dict(task_type='REGRESSION', target='fixture', revision='58231',
-                    payload=dict(spec_version=2, case='cases/success/run.tcl', flow='route', timeout_seconds=30,
-                                 flow_config={'route_design': 1, 'original': 1})))['task_id']
-            def task(identity):
-                return call('query_task', dict(task_id=identity))
-            try:
-                server = start_server()
-                worker = subprocess.Popen([sys.executable, '-B', '-u', str(project / 'worker/gcrp_worker.py'),
-                    '--worker-id', 'fixture-slot1', '--machine-id', 'fixture', '--slot-id', 'slot1'],
-                    env=environment, cwd=str(base), stdout=worker_log, stderr=subprocess.STDOUT)
-                eventually(lambda: worker_row() and worker_row()['control_supported'])
-                bad = request(port, 'control_workers', dict(machine_id='fixture', action='update',
-                                                           operation_id='bad', scope='../other'))
-                assert bad['code'] == 1, bad
-                first = submit()
-                eventually(lambda: task(first)['status'] == 'RUNNING')
-                second = submit()
-                paused = control('pause', 'pause-active')
-                assert paused['accepted'] == 1
-                assert task(first)['status'] == 'RUNNING'
-                eventually(lambda: task(first)['status'] == 'SUCCEEDED')
-                assert task(second)['status'] == 'QUEUED'
-                marker = base / 'marker.txt'
-                marker.write_text('repository-v2\n')
-                svn('import', '-m', 'new marker', marker, repository.as_uri() + '/test2/update_marker.txt')
-                accepted = control('update', 'update-once', scope='test2')
-                eventually(lambda: worker_row()['maintenance']['state'] == 'SUCCEEDED')
-                checkout = base / 'slots/fixture-slot1/galaxcore'
-                assert (checkout / 'test2/update_marker.txt').read_text() == 'repository-v2\n'
-                assert worker_row()['accepting_tasks'] is False
-                assert control('update', 'update-once', scope='test2') == accepted
-                journal = json.loads((base / 'output/maintenance.json').read_text())
-                assert journal['operation_id'] == 'update-once'
-                assert (base / 'output/maintenance-log-update-once.log').read_text().count('[MAINTENANCE]') == 1
-                stop(server)
-                server = start_server()
-                eventually(lambda: worker_row() and worker_row()['status'] == 'ONLINE')
-                assert worker_row()['accepting_tasks'] is False
-                assert task(second)['status'] == 'QUEUED'
-                assert control('update', 'update-once', scope='test2') == accepted
-                control('resume', 'resume-after-restart')
-                eventually(lambda: task(second)['status'] == 'SUCCEEDED')
-                # Create an actual SVN text conflict; no revert/delete is allowed.
-                writer = base / 'writer'
-                svn('checkout', repository.as_uri(), writer)
-                (writer / 'test2/update_marker.txt').write_text('repository-v3\n')
-                svn('commit', '-m', 'remote edit', writer / 'test2/update_marker.txt')
-                (checkout / 'test2/update_marker.txt').write_text('local edit\n')
-                control('update', 'update-conflict', scope='all')
-                eventually(lambda: worker_row()['maintenance']['state'] == 'FAILED')
-                assert worker_row()['accepting_tasks'] is False
-                assert 'local edit' in (checkout / 'test2/update_marker.txt').read_text()
-                third = submit()
-                time.sleep(1)
-                assert task(third)['status'] == 'QUEUED'
-                assert worker.poll() is None
-                print('WORKER_CONTROL_PROCESS PASS: pause, no active kill, SVN update, replay, restart, resume, conflict quarantine')
-            except BaseException:
-                try:
-                    print('WORKER STATE: ' + repr(worker_row()), file=sys.stderr)
-                except Exception:
-                    pass
-                for name, stream in (('SERVER', server_log), ('WORKER', worker_log)):
-                    stream.flush()
-                    stream.seek(0)
-                    print(name + ':\n' + stream.read()[-6000:], file=sys.stderr)
-                raise
-            finally:
-                stop(worker)
-                stop(server)
-
-
-if __name__ == '__main__':
-    main()
+with tempfile.TemporaryDirectory(prefix='gcrp-admin-denied-') as folder:
+    root=Path(folder)
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1',0))
+        port=probe.getsockname()[1]
+    config=root/'config.conf'
+    config.write_text('server.bind_ip=127.0.0.1\nnetwork.server_ip=127.0.0.1\nserver.port={}\n'
+        'server.io_threads=1\nserver.worker_threads=2\nlog.level=ERROR\nlog.dir={}\n'
+        'database.path={}\nserver.log_archive_root={}\nworker.output_dir={}\n'
+        'worker.reconnect_seconds=0.1\n'.format(port,root/'logs',root/'state.db',root/'archive',root/'output'))
+    environment=dict(os.environ,GCRP_CONFIG=str(config))
+    server=worker=None
+    with (root/'console.log').open('w+') as log:
+        def call(kind,data):
+            result=request(port,kind,data)
+            assert result['code']==0,result
+            return result['result']
+        def row():
+            return next((w for w in call('query_workers',{})['items'] if w['worker_id']=='fixture-slot1'),None)
+        def task(identity):
+            return call('query_task',{'task_id':identity})
+        def deny_all():
+            for target in ({'machine_id':'fixture'},{'worker_id':'fixture-slot1'}):
+                for action in ('pause','resume','update'):
+                    data=dict(target,action=action,operation_id='denied-'+action)
+                    if action=='update':
+                        data['scope']='all'
+                    result=request(port,'control_workers',data)
+                    assert result['code']==3 and 'disabled until authentication' in result['message'],result
+            assert row()['accepting_tasks'] is True
+            assert row()['maintenance']['state']=='IDLE'
+            assert not (root/'output/maintenance.json').exists()
+        try:
+            server=subprocess.Popen([sys.argv[1]],cwd=str(root),env=environment,stdout=log,stderr=subprocess.STDOUT)
+            wait_server(port,server)
+            features=call('query_capabilities',{})
+            assert 'control_workers' not in features['operations']
+            assert features['features']['remote_worker_management'] is False
+            assert features['features']['record_deletion'] is False
+            worker=subprocess.Popen([sys.executable,'-B','-u',str(Path(sys.argv[2]).resolve()/'worker/gcrp_worker.py'),
+                '--worker-id','fixture-slot1','--machine-id','fixture','--slot-id','slot1',
+                '--demo','--demo-seconds','2'],cwd=str(root),env=environment,stdout=log,stderr=subprocess.STDOUT)
+            eventually(lambda: row() and row()['control_supported'])
+            first=call('submit_task',{'task_type':'REGRESSION','target':'ordinary','revision':'demo'})['task_id']
+            eventually(lambda: task(first)['status']=='RUNNING')
+            queued=call('submit_task',{'task_type':'REGRESSION','target':'cancel-queued','revision':'demo'})['task_id']
+            call('cancel_task',{'task_id':queued})
+            assert task(queued)['status']=='CANCELLED'
+            deny_all()
+            eventually(lambda: task(first)['status']=='SUCCEEDED')
+            stop(server)
+            server=subprocess.Popen([sys.argv[1]],cwd=str(root),env=environment,stdout=log,stderr=subprocess.STDOUT)
+            wait_server(port,server)
+            eventually(lambda: row() and row()['status']=='ONLINE')
+            deny_all()
+            final=call('submit_task',{'task_type':'REGRESSION','target':'after-restart','revision':'demo'})['task_id']
+            eventually(lambda: task(final)['status']=='SUCCEEDED')
+            assert worker.poll() is None
+        except BaseException:
+            log.flush()
+            log.seek(0)
+            print(log.read()[-6000:],file=sys.stderr)
+            raise
+        finally:
+            stop(worker)
+            stop(server)
+print('WORKER_CONTROL_PROCESS PASS: admin requests denied before/after restart; submit/query/queued cancel unaffected')

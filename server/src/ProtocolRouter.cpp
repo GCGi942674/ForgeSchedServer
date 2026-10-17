@@ -123,24 +123,11 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
 
     switch (request.type) {
         case MessageType::CONTROL_WORKERS: {
-            try {
-                const auto& d=request.data;
-                Api::validate(d,{"machine_id","worker_id","action","operation_id","scope"});
-                if(d.contains("machine_id")==d.contains("worker_id"))throw std::invalid_argument("choose one target");
-                const bool machine=d.contains("machine_id");
-                const auto target=Api::text(d,machine?"machine_id":"worker_id",256);
-                const auto action=Api::text(d,"action",16), id=Api::text(d,"operation_id",128);
-                if(!RunLogArchive::validRunId(id)||(action!="pause"&&action!="resume"&&action!="update"))
-                    throw std::invalid_argument("invalid control action or operation_id");
-                const auto scope=Api::text(d,"scope",16);
-                if(action=="update"?(scope!="test2"&&scope!="all"):d.contains("scope"))
-                    throw std::invalid_argument("update scope must be test2 or all; other actions have no scope");
-                auto result=worker_manager_.control(machine,target,action,id,scope);
-                if(!result)return buildResponse(request,ResponseCode::NOT_FOUND,"target not registered");
-                if(action=="resume")scheduling_driver_.requestSchedule();
-                return buildResponse(request,ResponseCode::OK,"accepted",*result);
-            }catch(const std::invalid_argument& error){return buildResponse(request,ResponseCode::INVALID_REQUEST,error.what());}
-             catch(const std::logic_error& error){return buildResponse(request,ResponseCode::INVALID_STATE,error.what());}
+            // Protocol roles are not authenticated identities. Until real admin
+            // authorization exists, deny every remote mutation before inspecting
+            // the target or touching durable controls. No config bypass switch.
+            return buildResponse(request,ResponseCode::INVALID_STATE,
+                "remote worker administration disabled until authentication is implemented");
         }
         case MessageType::LOG_APPEND:
         case MessageType::QUERY_LOGS:
@@ -204,7 +191,7 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
         case MessageType::QUERY_CAPABILITIES: {
             try {
                 const auto data = request.type == MessageType::QUERY_TASKS
-                    ? Api::tasks(request.data, scheduler_)
+                    ? task_lists_.query(request.data, scheduler_)
                     : request.type == MessageType::QUERY_WORKERS
                     ? Api::workers(request.data, worker_manager_)
                     : Api::capabilities(request.data);
@@ -287,16 +274,8 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
             if (!request.data.is_object() || !request.data.empty())
                 return buildResponse(request, ResponseCode::INVALID_REQUEST, "invalid status request");
             uint64_t queued = 0, assigned = 0, running = 0, pending = 0, total = 0;
-            for (const auto& task : scheduler_.getTasks()) {
-                ++total;
-                switch (task.getStatus()) {
-                    case TaskStatus::PENDING: ++pending; break;
-                    case TaskStatus::QUEUED: ++queued; break;
-                    case TaskStatus::ASSIGNED: ++assigned; break;
-                    case TaskStatus::RUNNING: ++running; break;
-                    default: break;
-                }
-            }
+            const auto counts=scheduler_.statusCounts();for(auto it=counts.begin();it!=counts.end();++it)total+=it.value().get<uint64_t>();
+            pending=counts.value("PENDING",uint64_t(0));queued=counts.value("QUEUED",uint64_t(0));assigned=counts.value("ASSIGNED",uint64_t(0));running=counts.value("RUNNING",uint64_t(0));
             nlohmann::json machines = nlohmann::json::object();
             nlohmann::json workers = nlohmann::json::array();
             for (const auto& worker : worker_manager_.getWorkers()) {
@@ -418,8 +397,12 @@ ProtocolMessage ProtocolRouter::handle(const ProtocolMessage& request) {
                 return buildResponse(request, ResponseCode::NOT_FOUND, "worker not found");
             }
             try {
-                const auto management=worker_manager_.managementHeartbeat(heartbeat_req.worker_id,
+                auto management=worker_manager_.managementHeartbeat(heartbeat_req.worker_id,
                     request.data.value("maintenance_ack",nlohmann::json(nullptr)));
+                // Accept completion ACKs for already-running maintenance, but
+                // never replay persisted PENDING SVN commands after this upgrade.
+                management["command"]=nullptr;
+                management["administration_disabled"]=true;
                 scheduling_driver_.requestSchedule();
                 return buildResponse(request, ResponseCode::OK, "ok",management);
             }catch(const std::invalid_argument& error){return buildResponse(request,ResponseCode::INVALID_REQUEST,error.what());}

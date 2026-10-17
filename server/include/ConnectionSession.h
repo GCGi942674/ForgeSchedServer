@@ -11,6 +11,7 @@ public:
                       SchedulingDriver&);
     void onMessage(const std::string&);
     void handleClose();
+    bool authorizeLog(const Protocol::ProtocolMessage&);
     Protocol::ConnectionRole role() const { return role_; }
 private:
     void sendResponse(const Protocol::ProtocolMessage&);

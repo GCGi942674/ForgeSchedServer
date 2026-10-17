@@ -38,13 +38,14 @@ void MainWindow::showWorkers() {
         const auto worker=text(w,"worker_id");
         auto toggle=new QPushButton(requested?QStringLiteral("停止接单"):QStringLiteral("恢复接单"));
         auto update=new QPushButton(QStringLiteral("更新 SVN"));actions->addWidget(toggle);actions->addWidget(update);
-        const bool enabled=(demo_||(!workersStale_&&operations_.contains("control_workers")))&&!managementPending_&&online;
+        const bool enabled=demo_&&!managementPending_&&online;
+        if(!demo_){toggle->setToolTip(QStringLiteral("管理员身份认证尚未接入，远程工作机管理暂时禁用。"));update->setToolTip(toggle->toolTip());}
         toggle->setEnabled(enabled&&(requested||!pending));
         update->setEnabled(enabled&&!pending&&(demo_||w.value("control_supported",false)));
         connect(toggle,&QPushButton::clicked,this,[this,worker,requested]{controlWorkers(false,worker,requested?"pause":"resume");});
         connect(update,&QPushButton::clicked,this,[this,worker]{controlWorkers(false,worker,"update");});
         slotsTable_->setCellWidget(row,4,controls);
-        cell(slotsTable_,row,3,QStringLiteral("空闲")+"\n"+QStringLiteral("容量 ")+text(w,"used")+"/"+text(w,"capacity"));for(const auto& t:tasks_)if(text(t,"worker_id")==text(w,"worker_id")&&(text(t,"status")=="RUNNING"||text(t,"status")=="ASSIGNED")){
+        cell(slotsTable_,row,3,(w.value("used",0)>0?QStringLiteral("已占用"):QStringLiteral("空闲"))+"\n"+QStringLiteral("容量 ")+text(w,"used")+"/"+text(w,"capacity"));for(const auto& t:tasks_)if(text(t,"worker_id")==text(w,"worker_id")&&(text(t,"status")=="RUNNING"||text(t,"status")=="ASSIGNED")){
             cell(slotsTable_,row,3,"Task #"+text(t,"task_id")+"\n"+text(t.value("payload",Json::object()),"case"));slotsTable_->item(row,3)->setData(Qt::UserRole,text(t,"task_id"));break;
         }
     }
@@ -53,11 +54,11 @@ void MainWindow::showWorkers() {
         .arg(machines_->currentText()).arg(onlineCount).arg(offlineCount).arg(legacyCount));
     if(machines_->count()==0)workerSummary_->setText(workersStale_?QStringLiteral("尚未确认 Server 工作机信息，请检查连接。"):
         QStringLiteral("当前没有在线工作机。可勾选查看离线历史 slots；不会用演示数据填充。"));
-    for(auto button:hostControlButtons_)button->setEnabled(anyOnline&&!managementPending_&&
-        (demo_||(!workersStale_&&operations_.contains("control_workers"))));
+    for(auto button:hostControlButtons_){button->setEnabled(demo_&&anyOnline&&!managementPending_);if(!demo_)button->setToolTip(QStringLiteral("管理员身份认证尚未接入，远程工作机管理暂时禁用。"));}
 }
 
 void MainWindow::controlWorkers(bool machine,const QString& target,const QString& action) {
+    if(!demo_){note(QStringLiteral("管理员身份认证尚未接入，远程工作机管理暂时禁用。"),true);return;}
     if(target.isEmpty()||managementPending_)return;
     if(!demo_&&(workersStale_||!operations_.contains("control_workers"))){
         note(QStringLiteral("状态过期或 Server 不支持管理接口，请先刷新 / 升级。"),true);return;}

@@ -24,8 +24,13 @@ Cancellation stops queued cases; remote termination of active real processes rem
 Roles are not authentication:
 use only on trusted networks, not a public Internet endpoint.
 
+Remote Worker pause/resume/SVN administration is disabled until authentication
+is implemented; bypassing the GUI does not enable it. Ordinary submit/query and
+queued-case cancellation remain available. See [production hardening](docs/production-hardening.md)
+for daily-task grouping, complete exports, log rotation and consistent backups.
+
 ## 配置与目录更新
 
-配置仅拆为 `config/server.conf`（Server/CLI/GUI/每日提交）与 `config/worker.conf`（Worker）。旧 `gcrp.conf` 和显式 `GCRP_CONFIG` 继续兼容。
+配置仅拆为 `config/server.conf`（Server/CLI/每日提交）与 `config/worker.conf`（Worker）。这些服务仍兼容旧 `gcrp.conf` 和显式 `GCRP_CONFIG`。GUI 不读取配置文件，只用 `./build/bin/gcrp_gui --ip 192.168.10.11 --port 8080` 连接。
 现有部署从项目根运行 `python3 -B tools/split_config.py`；工具不会覆盖目标，也不会搬数据库、日志、身份文件或 SVN 副本。新部署使用对应 `.conf.example`。
 Qt 代码已整理为 `gui/qt/include` 与 `gui/qt/src`；构建入口不变。完整路径及日志说明见 [目录整理](docs/layout-plan.md)。

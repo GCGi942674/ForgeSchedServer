@@ -24,9 +24,9 @@ Server：
 
 关闭终端不会停止后台进程。此脚本不是 systemd，不保证系统重启自启，也不自动重启崩溃的 manager/Server。现有 manager 负责各 slot 子进程的重试。Server start.sh 仅启动 C++ Server，不会额外启动 clock.py 或重复配置定时任务。
 
-`stop.sh` 是优雅停止，不是临时暂停接单。工作机先排空任务，最多等待 30 秒；超时返回 2，保留进程和状态文件，不发送 SIGKILL。可以稍后查看状态，或 `./worker/stop.sh --wait 600`。临时暂停/恢复接单仍通过 GUI/CLI 管理接口操作，不用停止服务。
+`stop.sh` 是优雅停止，不是临时暂停接单。工作机先排空任务，最多等待 30 秒；超时返回 2，保留进程和状态文件，不发送 SIGKILL。可以稍后查看状态，或 `./worker/stop.sh --wait 600`。身份认证接入前，GUI/CLI 远程暂停/恢复和 SVN 更新暂时禁用；这些本机脚本仍可由有操作系统权限的人员使用。
 
-启动控制台输出保存在 `logs/server/YYYYMMDD/server-service.log` 或 `logs/workers/主机名/YYYYMMDD/worker-service.log`。日期是启动日期，长驻进程不自动每天重开这个文件；业务日志继续使用现有日志机制。
+启动控制台输出保存在 `logs/server/YYYYMMDD/server-service.*.log` 或 `logs/workers/主机名/YYYYMMDD/worker-service.*.log`。独立日志进程按日期和大小轮转，默认每份约 10 MiB、保留 30 天；清理时保留仍被进程打开的文件。业务日志继续使用现有日志机制。
 
 服务记录在 `data/services`，操作用 flock 串行化；发送信号前核对 PID、Linux 进程启动时刻及本项目启动入口，不用 pkill 或进程名批量终止。只管理本脚本启动的进程，不接管旧前台启动或其他部署的进程。状态只说明进程存在，不代表完成 SVN checkout、注册或网络就绪。
 

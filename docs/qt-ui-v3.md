@@ -1,5 +1,9 @@
 # Qt UI v3
 
+> 当前安全策略：登录认证暂缓，正式模式下工作机暂停/恢复接单和 SVN 更新
+> 按钮禁用，Server 同样拒绝直接管理请求。任务提交、查询和取消未执行案例
+> 保持可用；删除记录继续禁用。下列管理界面描述保留为底层功能说明。
+
 本轮以用户指定的 `gcrp-console-v3/index.html` 及其 CSS/JS 为唯一视觉参考，用原生 C++ / Qt Widgets 实现，不嵌入浏览器，不替换真实 Server 数据来源。
 
 ## 已还原
@@ -29,11 +33,14 @@ PASS 需要业务 `case_status=PASS`；仅有 SUCCEEDED 不自动伪造 PASS。C
 
 ```sh
 make GUI=ON
-./build/bin/gcrp_gui --config config/server.conf
-# 若仍用旧单文件：--config config/gcrp.conf
+./build/bin/gcrp_gui --ip 192.168.10.11 --port 8080
 ```
 
 窗口标题含 **UI v3**，请退出旧窗口再运行新二进制。仅查看演示：`./build/bin/gcrp_gui --demo`。
+
+正式连接只接受 `--ip` 和 `--port`；GUI 不读取配置文件或 `GCRP_CONFIG`，
+不再支持 `--config`。可以将程序复制到公共目录，从任意工作目录启动。
+客户端仍需兼容的 Qt5 运行库和图形桌面。Server/Worker 的配置方式不变。
 
 只有命令行的机器：
 

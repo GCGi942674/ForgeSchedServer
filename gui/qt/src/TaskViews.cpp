@@ -17,7 +17,13 @@ void MainWindow::showTasks() {
         const auto payload=t.value("payload",Json::object()),context=payload.value("context",Json::object());
         QMap<QString,int> totals,business;QStringList revisions;
         for(int i=0;i<parent->childCount();++i){auto item=parent->child(i);totals[item->text(1)]++;business[item->data(0,Qt::UserRole+2).toString()]++;if(!revisions.contains(item->text(3)))revisions<<item->text(3);}
-        const int pass=business["PASS"],fail=business["FAIL"],timeout=totals["TIMEOUT"],running=totals["RUNNING"]+totals["ASSIGNED"],queued=totals["QUEUED"]+totals["PENDING"],cancelled=totals["CANCELLED"],total=parent->childCount(),done=total-running-queued;
+        int total=parent->childCount();
+        if(t.contains("group_summary")){totals.clear();business.clear();const auto& summary=t["group_summary"];for(auto it=summary["counts"].begin();it!=summary["counts"].end();++it)totals[QString::fromStdString(it.key())]=it.value().get<int>();total=summary["total"].get<int>();
+            for(auto it=summary["outcomes"].begin();it!=summary["outcomes"].end();++it)business[QString::fromStdString(it.key())]=it.value().get<int>();
+            parent->setData(0,Qt::UserRole+6,QString::fromStdString(summary.dump()));
+        }
+        const int pass=business["PASS"],fail=business["FAIL"],timeout=totals["TIMEOUT"],running=totals["RUNNING"]+totals["ASSIGNED"],queued=totals["QUEUED"]+totals["PENDING"],cancelled=totals["CANCELLED"],done=total-running-queued;
+        if(t.contains("group_summary")){const auto old=text(t,"status");runningAll+=running-((old=="RUNNING"||old=="ASSIGNED")?1:0);queuedAll+=queued-((old=="QUEUED"||old=="PENDING")?1:0);failAll+=totals["FAILED"]+timeout-((old=="FAILED"||old=="TIMEOUT")?1:0);}
         const auto status=running?"RUNNING":queued?"QUEUED":fail||timeout||business["CRASH"]||business["ERROR"]?"FAIL":cancelled?"CANCELLED":business["UNKNOWN"]?"UNKNOWN":"PASS";
         const auto source=QString::fromStdString(context.value("source",std::string("unknown")));parent->setData(0,Qt::UserRole+2,source);
         const auto name=QString::fromStdString(context.value("name",batch.toStdString())),flow=QString::fromStdString(context.value("template",payload.value("flow",std::string())));
@@ -50,6 +56,13 @@ void MainWindow::filterTasks() {
     const auto query=taskSearch_->text().trimmed(),status=taskStatus_->currentData().toString(),source=taskSource_->currentData().toString();
     QList<QTreeWidgetItem*> matched;int matchedCases=0;
     for(int i=0;i<tasksTree_->topLevelItemCount();++i){auto batch=tasksTree_->topLevelItem(i);int count=0;
+        const auto group=batch->data(0,Qt::UserRole+6).toString();
+        if(!group.isEmpty()){
+            const auto summary=Json::parse(group.toStdString());auto n=[&](const char* key){return summary["outcomes"].value(key,0);};
+            const bool state=status.isEmpty()||(status=="RUNNING"?(n("RUNNING")+n("ASSIGNED")>0):status=="QUEUED"?(n("QUEUED")+n("PENDING")>0):summary["outcomes"].value(status.toStdString(),0)>0);
+            const bool match=state&&(source.isEmpty()||batch->data(0,Qt::UserRole+2).toString()==source)&&(batch->data(0,Qt::UserRole+4).toString()+" "+batch->text(1)).contains(query,Qt::CaseInsensitive);
+            batch->setHidden(true);if(match){matched<<batch;matchedCases+=summary["total"].get<int>();}continue;
+        }
         for(int j=0;j<batch->childCount();++j){auto item=batch->child(j);QStringList fields{batch->text(0)};
             fields<<batch->data(0,Qt::UserRole+4).toString();for(int c=0;c<5;++c)fields<<item->text(c);
             const auto value=item->data(0,Qt::UserRole+2).toString();
@@ -60,21 +73,28 @@ void MainWindow::filterTasks() {
     const int pages=qMax(1,(matched.size()+19)/20);taskPage_=qBound(0,taskPage_,pages-1);
     for(int i=taskPage_*20;i<qMin(matched.size(),(taskPage_+1)*20);++i)matched[i]->setHidden(false);
     taskPrev_->setEnabled(taskPage_>0);taskNext_->setEnabled(taskPage_+1<pages);
-    taskSummary_->setText(QStringLiteral("%1 个匹配批次 · %2 个匹配 testcase · 第 %3/%4 页\n仅当前已加载快照（最多 5000 条任务）；统计卡片非全库总数").arg(matched.size()).arg(matchedCases).arg(taskPage_+1).arg(pages));
+    taskSummary_->setText(QStringLiteral("%1 个任务 · %2 个 testcase · 第 %3/%4 页\n每日任务对应 Tasks.yaml 条目；打开详情查看完整案例列表").arg(matched.size()).arg(matchedCases).arg(taskPage_+1).arg(pages));
     bool omitted=false;for(const auto& task:tasks_)omitted=omitted||task.value("summary_truncated",false);
     if(omitted)taskSummary_->setText(taskSummary_->text()+QStringLiteral("\n部分摘要超限已省略；请打开任务详情。缺少路径的记录不会导出到路径清单。"));
 }
 
 
 void MainWindow::openBatch(const QString& batch) {
+    if(demo_){openBatchRows(batch,tasks_);return;}
+    note(QStringLiteral("正在加载该任务的完整测试案例…"));
+    fetchList("query_tasks",{{"batch_id",batch.toStdString()}},nullptr,std::make_shared<Json>(Json::array()),{},
+        [this,batch](bool ok,Json rows,QString error){if(!ok){note(QStringLiteral("任务详情加载失败：")+error,true);return;}openBatchRows(batch,rows);});
+}
+
+void MainWindow::openBatchRows(const QString& batch,const Json& records) {
     auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("batchDialog");dialog->resize(1120,740);
     dialog->setWindowTitle(QStringLiteral("批次详情 · ")+batch);auto layout=new QVBoxLayout(dialog);layout->setContentsMargins(24,22,24,20);layout->setSpacing(16);
     auto top=new QHBoxLayout;auto heading=new QLabel(batch);heading->setObjectName("dialogTitle");heading->setTextFormat(Qt::PlainText);heading->setWordWrap(true);top->addWidget(heading,1);
     auto close=new QPushButton(QStringLiteral("关闭"));top->addWidget(close);connect(close,&QPushButton::clicked,dialog,&QDialog::close);layout->addLayout(top);
     auto snapshot=std::make_shared<Json>(Json::array());QMap<QString,int> totals;
-    for(const auto& task:tasks_){auto id=text(task,"batch_id");if(id.isEmpty()||id=="—")id=QStringLiteral("无批次 / 单任务");if(id==batch){snapshot->push_back(task);totals[text(task,"status")]++;}}
+    for(const auto& task:records){auto id=text(task,"batch_id");if(id.isEmpty()||id=="—")id=QStringLiteral("无批次 / 单任务");if(id==batch){snapshot->push_back(task);totals[text(task,"status")]++;}}
     auto stats=new QLabel(QStringLiteral("总例数 %1　 ·　 PASS %2　 FAIL %3　 TIMEOUT %4　 ·　 运行 %5 / 排队 %6").arg(snapshot->size()).arg(totals["SUCCEEDED"]).arg(totals["FAILED"]).arg(totals["TIMEOUT"]).arg(totals["RUNNING"]+totals["ASSIGNED"]).arg(totals["QUEUED"]+totals["PENDING"]));stats->setWordWrap(true);stats->setObjectName("notice");layout->addWidget(stats);
-    auto hint=new QLabel(QStringLiteral("当前已加载快照，不保证包含整个批次。筛选 / 导出仅覆盖本快照；缺少日志不代表 testcase 失败。"));hint->setObjectName("muted");hint->setWordWrap(true);layout->addWidget(hint);
+    auto hint=new QLabel(QStringLiteral("已加载该任务全部案例的查询快照；筛选 / 导出覆盖此任务，不限于当前页。缺少日志不代表 testcase 失败。"));hint->setObjectName("muted");hint->setWordWrap(true);layout->addWidget(hint);
     auto toolbar=new QHBoxLayout;auto status=new QComboBox;for(int i=0;i<taskStatus_->count();++i)status->addItem(taskStatus_->itemText(i),taskStatus_->itemData(i));
     auto search=new QLineEdit;search->setPlaceholderText(QStringLiteral("搜索 testcase 路径 / Worker"));search->setClearButtonEnabled(true);
     auto exportButton=new QPushButton(QStringLiteral("导出匹配清单…"));toolbar->addWidget(status);toolbar->addWidget(search,1);toolbar->addWidget(exportButton);layout->addLayout(toolbar);

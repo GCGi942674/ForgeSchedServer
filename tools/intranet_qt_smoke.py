@@ -54,7 +54,8 @@ def main():
         if args.connect:
             print('[QT-GUI] read-only Server probe', flush=True)
             probe_env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
-            run([str(build / 'bin' / 'gcrp_gui'), '--probe'], ROOT, 'server_probe', env=probe_env)
+            run([str(build / 'bin' / 'gcrp_gui'), '--ip', config['network.server_ip'],
+                 '--port', config['server.port'], '--probe'], ROOT, 'server_probe', env=probe_env)
         report['display'] = os.environ.get('DISPLAY', '')
         report['wayland_display'] = os.environ.get('WAYLAND_DISPLAY', '')
         qmake = config.get('tools.qt_qmake') or shutil.which('qmake')

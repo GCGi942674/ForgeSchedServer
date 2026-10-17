@@ -42,6 +42,10 @@ public:
     void handleClose();
 
     bool isRegistered() const;
+    bool permitsLogUpload(const Protocol::ProtocolMessage& request) {
+        return worker_id_ && binding_handle_ && registry_.isCurrent(*worker_id_,*binding_handle_) &&
+            validateWorkerIdentity(request);
+    }
 
 private:
     void handleRequest(const Protocol::ProtocolMessage& request);

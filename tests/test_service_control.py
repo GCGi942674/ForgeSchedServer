@@ -18,6 +18,7 @@ class LauncherTest(unittest.TestCase):
             for directory in ('tools', 'worker', 'config'):
                 (root / directory).mkdir()
             shutil.copyfile(str(source), str(root / 'tools/service_control.py'))
+            shutil.copyfile(str(source.with_name('service_log.py')), str(root / 'tools/service_log.py'))
             (root / 'config/worker.conf').write_text('worker.slots=1\n')
             (root / 'worker/slot_manager.py').write_text(
                 'import signal,time\n'

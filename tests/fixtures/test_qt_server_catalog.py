@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='gcrp-qt-server-catalog-') as temporary:
         try:
             server = subprocess.Popen([str(Path(sys.argv[1]).resolve())], cwd=str(root), env=env, stdout=log, stderr=subprocess.STDOUT)
             wait_server(port, server)
-            result = subprocess.run([str(Path(sys.argv[2]).resolve()), '--config', str(config), '--catalog-probe'],
+            result = subprocess.run([str(Path(sys.argv[2]).resolve()), '--ip', '127.0.0.1', '--port', str(port), '--catalog-probe'],
                 cwd=str(root), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=35, universal_newlines=True)
             print(result.stdout)
             assert result.returncode == 0, result.stdout
@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='gcrp-qt-server-catalog-') as temporary:
                     'context': {'batch_id': 'qt-list-fixture', 'name': 'Qt snapshot',
                                 'source': 'manual', 'template': 'route'}}})
                 assert response['code'] == 0, response
-            result = subprocess.run([str(Path(sys.argv[2]).resolve()), '--config', str(config), '--snapshot-probe'],
+            result = subprocess.run([str(Path(sys.argv[2]).resolve()), '--ip', '127.0.0.1', '--port', str(port), '--snapshot-probe'],
                 cwd=str(root), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=35, universal_newlines=True)
             print(result.stdout)
             assert result.returncode == 0, result.stdout

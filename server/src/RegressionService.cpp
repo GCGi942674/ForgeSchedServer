@@ -158,7 +158,8 @@ nlohmann::json RegressionService::query(const RegressionQuery& filter) const {
             // Cache allocation failures must not fail a valid query.
         }
     }
-    auto snapshot = scheduler_.taskSnapshot();
+    std::pair<uint64_t,std::vector<Task>> snapshot;
+    snapshot.first=scheduler_.visitTasks([&](const Task& task){if(matches(task,filter))snapshot.second.push_back(task);},filter.batch_id);
     auto& tasks = snapshot.second;
     std::sort(tasks.begin(), tasks.end(), [](const Task& a, const Task& b) {
         return a.getId() > b.getId();
@@ -205,8 +206,14 @@ nlohmann::json RegressionService::query(const RegressionQuery& filter) const {
 
 nlohmann::json RegressionService::compareDaily(const RegressionQuery& filter) const {
     using Pair=std::pair<const Task*,const Task*>;
-    auto snapshot=scheduler_.taskSnapshot();std::map<std::string,Pair> pairs;std::set<std::string> templates;
+    std::pair<uint64_t,std::vector<Task>> snapshot;std::map<std::string,Pair> pairs;std::set<std::string> templates;
     uint64_t excluded=0,duplicates=0;
+    snapshot.first=scheduler_.visitTasks([&](const Task& task){
+        if(task.getType()!=TaskType::REGRESSION||field(task.getPayload(),"case").empty())return;
+        const auto day=contextOf(task,"date"),stage=contextOf(task,"template");
+        if(contextOf(task,"source")!="scheduled"||stage.empty()||!validDate(day)){++excluded;return;}
+        if(day==filter.date||day==filter.baseline_date)snapshot.second.push_back(task);
+    });
     for(const auto& task:snapshot.second){
         if(task.getType()!=TaskType::REGRESSION||field(task.getPayload(),"case").empty())continue;
         const auto day=contextOf(task,"date"),stage=contextOf(task,"template");

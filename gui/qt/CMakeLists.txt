@@ -29,6 +29,9 @@ if(BUILD_TESTING)
   set_tests_properties(test_qt_gui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   find_package(Python3 3.6 QUIET COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
+    add_test(NAME test_qt_cli COMMAND ${Python3_EXECUTABLE} -B
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli.py $<TARGET_FILE:gcrp_gui>)
+    set_tests_properties(test_qt_cli PROPERTIES TIMEOUT 45)
     add_test(NAME test_qt_catalog COMMAND ${Python3_EXECUTABLE} -B
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/catalog.py
       ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/export_gui_catalog.py)

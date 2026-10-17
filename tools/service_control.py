@@ -127,14 +127,29 @@ def main():
         log_path = log_dir / (args.role + '-service.log')
         env = os.environ.copy()
         env['GCRP_CONFIG'] = str(config)
-        with log_path.open('ab', buffering=0) as log:
+        values = {}
+        for line in config.read_text(encoding='utf-8').splitlines():
+            if '=' in line and not line.lstrip().startswith('#'):
+                key, value = line.split('=', 1)
+                values[key.strip()] = value.strip()
+        days = int(values.get('log.retention_days', '30'))
+        maximum = int(values.get('log.service_max_bytes', '10485760'))
+        if not 1 <= days <= 3650 or not 65536 <= maximum <= 1073741824:
+            parser.error('invalid log retention days or service_max_bytes')
+        sink = subprocess.Popen([sys.executable, '-B', str(root / 'tools/service_log.py'),
+                                 str(log_root), args.role, str(days), str(maximum)],
+                                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=True)
+        try:
             child = subprocess.Popen(command, cwd=str(root), env=env,
-                                     stdin=subprocess.DEVNULL, stdout=log,
+                                     stdin=subprocess.DEVNULL, stdout=sink.stdin,
                                      stderr=subprocess.STDOUT, close_fds=True,
                                      start_new_session=True)
+        finally:
+            sink.stdin.close()
         ticks = identity(child.pid)
         record = dict(pid=child.pid, start_ticks=ticks, root=str(root),
-                      role=args.role, log=str(log_path), config=str(config))
+                      role=args.role, log=str(log_root / '*' / (args.role + '-service.*.log')), config=str(config))
         temp = record_path.with_suffix('.tmp')
         try:
             temp.write_text(json.dumps(record), encoding='utf-8')

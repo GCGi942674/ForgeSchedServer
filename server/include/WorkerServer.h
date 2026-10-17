@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <thread>
 #include <condition_variable>
+#include <deque>
+#include <functional>
 #include "worker/WorkerSession.h"
 #include "ConnectionSession.h"
 #include "persistence/StateStore.h"
@@ -51,6 +53,11 @@ private:
     std::mutex liveness_mutex_;
     std::condition_variable liveness_cv_;
     bool stopping_{false};
+    std::vector<std::thread> log_threads_;
+    std::mutex log_mutex_;
+    std::condition_variable log_cv_;
+    std::deque<std::function<void()>> log_jobs_;
+    bool log_stopping_{false};
 };
 
 } // namespace GCRP

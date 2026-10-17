@@ -14,6 +14,7 @@
 #include "regression/RegressionService.h"
 #include "log/RunLogArchive.h"
 #include "protocol/GuiCatalog.h"
+#include "protocol/TaskListQuery.h"
 
 namespace GCRP {
 
@@ -64,6 +65,7 @@ private:
     RegressionService regression_service_;
     RunLogArchive log_archive_;
     GuiCatalog gui_catalog_;
+    Api::TaskListQuery task_lists_;
 };
 
 } // namespace GCRP::Protocol

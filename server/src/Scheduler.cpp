@@ -124,7 +124,7 @@ nlohmann::json Scheduler::recoverWorker(const WorkerId& worker_id, const std::st
 void Scheduler::restoreFrom(StateStore& store) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!tasks_.empty() || store_) throw std::runtime_error("scheduler already initialized");
-    auto loaded = store.loadTasks();
+    auto loaded = store.loadTasks(0,true);
     auto stopped = store.loadStoppedBatches();
     TaskQueue queue;
     queue.reserve(loaded.size());
@@ -138,12 +138,14 @@ void Scheduler::restoreFrom(StateStore& store) {
     for (const auto& id : stopped) stopped_batches_.insert(id);
     task_queue_.swap(queue);
     store_ = &store;
+    next_sequence_=std::max(next_sequence_,store.highWaterMarks().second+1);
     ++task_generation_;
 }
 
 TaskId Scheduler::nextTaskId() const {
     std::lock_guard<std::mutex> lock(mutex_);
     TaskId maximum = 0;
+    if(store_)maximum=store_->highWaterMarks().first;
     for (const auto& entry : tasks_) maximum = std::max(maximum, entry.first);
     if (maximum == std::numeric_limits<int64_t>::max())
         throw std::runtime_error("task id exhausted");
@@ -153,7 +155,8 @@ TaskId Scheduler::nextTaskId() const {
 std::optional<WorkerId> Scheduler::archiveOwner(TaskId id, const std::string& run_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto it = tasks_.find(id);
-    if (it == tasks_.end() || run_id.empty()) return std::nullopt;
+    if(run_id.empty())return std::nullopt;
+    if(it==tasks_.end())return store_?store_->archiveOwner(id,run_id):std::nullopt;
     const auto& task = it->second;
     if (task.getRunId() == run_id &&
         (task.getStatus() == TaskStatus::SUCCEEDED ||
@@ -206,6 +209,16 @@ std::optional<TaskId> Scheduler::submitTask(Task task, const std::string& submis
 
     const auto batch = batchId(task);
     if (batch && stopped_batches_.count(*batch)) return std::nullopt;
+
+    if(store_){
+        if(!store_->loadTasks(task.getId()).empty())return std::nullopt;
+        // Only terminal records may leave the hot set. Durable history remains
+        // queryable; reservations, active journals and queued tasks stay resident.
+        if(tasks_.size()>2048)for(auto it=tasks_.begin();it!=tasks_.end();){
+            const auto s=it->second.getStatus();
+            if((s==TaskStatus::SUCCEEDED||s==TaskStatus::FAILED||s==TaskStatus::TIMEOUT||s==TaskStatus::CANCELLED)&&!dispatching_.count(it->first))it=tasks_.erase(it);else ++it;
+        }
+    }
 
     if (tasks_.find(task.getId()) != tasks_.end()) {
         LOG_WARN(LogModule::SCHEDULER, "Duplicate TaskId: " + std::to_string(task.getId()));
@@ -458,6 +471,7 @@ std::optional<BatchSnapshot> Scheduler::queryBatch(const std::string& batch_id) 
     std::lock_guard<std::mutex> lock(mutex_);
     BatchSnapshot snapshot;
     snapshot.stop_requested = stopped_batches_.count(batch_id) != 0;
+    if(store_){for(const auto& row:store_->loadTasks(0,false,batch_id))countStatus(snapshot,row.task.getStatus());return snapshot.total?std::make_optional(snapshot):std::nullopt;}
     for (const auto& entry : tasks_)
         if (const auto id = batchId(entry.second); id && *id == batch_id)
             countStatus(snapshot, entry.second.getStatus());
@@ -468,6 +482,7 @@ std::optional<BatchSnapshot> Scheduler::queryBatch(const std::string& batch_id) 
 std::optional<BatchSnapshot> Scheduler::cancelBatch(const std::string& batch_id) {
     std::lock_guard<std::mutex> lock(mutex_);
     bool found = false;
+    if(store_)found=!store_->loadTasks(0,false,batch_id).empty();
     for (const auto& entry : tasks_)
         if (const auto id = batchId(entry.second); id && *id == batch_id) {
             found = true; break;
@@ -505,6 +520,7 @@ std::optional<BatchSnapshot> Scheduler::cancelBatch(const std::string& batch_id)
         countStatus(snapshot, task.getStatus());
     }
     if (snapshot.cancelled_now) ++task_generation_;
+    if(store_){const auto cancelled=snapshot.cancelled_now;snapshot=BatchSnapshot{};snapshot.stop_requested=true;snapshot.cancelled_now=cancelled;for(const auto& row:store_->loadTasks(0,false,batch_id))countStatus(snapshot,row.task.getStatus());}
     return snapshot;
 }
 
@@ -518,6 +534,7 @@ std::optional<Task> Scheduler::getTask(TaskId id) const {
 
     auto it = tasks_.find(id);
     if (it == tasks_.end()) {
+        if(store_){auto rows=store_->loadTasks(id);if(!rows.empty())return std::move(rows.front().task);}
         return std::nullopt;
     }
 
@@ -526,6 +543,8 @@ std::optional<Task> Scheduler::getTask(TaskId id) const {
 
 std::vector<Task> Scheduler::getTasks() const {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if(store_){std::vector<Task> result;for(auto& row:store_->loadTasks())result.push_back(std::move(row.task));return result;}
 
     std::vector<Task> result;
     result.reserve(tasks_.size());
@@ -539,6 +558,7 @@ std::vector<Task> Scheduler::getTasks() const {
 
 std::pair<uint64_t, std::vector<Task>> Scheduler::taskSnapshot() const {
     std::lock_guard<std::mutex> lock(mutex_);
+    if(store_){std::vector<Task> result;for(auto& row:store_->loadTasks())result.push_back(std::move(row.task));return {task_generation_,std::move(result)};}
     std::vector<Task> result;
     result.reserve(tasks_.size());
     for (const auto& entry : tasks_) result.push_back(entry.second);
@@ -550,8 +570,21 @@ uint64_t Scheduler::taskGeneration() const {
     return task_generation_;
 }
 
+nlohmann::json Scheduler::statusCounts() const {
+    std::lock_guard<std::mutex> lock(mutex_);if(store_)return store_->statusCounts();
+    auto result=nlohmann::json::object();for(const auto& task:tasks_){auto key=toString(task.second.getStatus());result[key]=result.value(key,uint64_t(0))+1;}return result;
+}
+
+uint64_t Scheduler::visitTasks(const std::function<void(const Task&)>& visitor,const std::string& batch_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(store_)store_->visitTasks([&](Task&& task,uint64_t){visitor(task);},0,false,batch_id);
+    else for(const auto& entry:tasks_){const auto id=batchId(entry.second);if(batch_id.empty()||(id&&*id==batch_id))visitor(entry.second);}
+    return task_generation_;
+}
+
 std::vector<Task> Scheduler::getTasksByStatus(TaskStatus status) const {
     std::lock_guard<std::mutex> lock(mutex_);
+    if(store_){std::vector<Task> result;for(auto& row:store_->loadTasks())if(row.task.getStatus()==status)result.push_back(std::move(row.task));return result;}
 
     std::vector<Task> result;
 

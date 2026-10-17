@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <unordered_set>
 #include <algorithm>
+#include <functional>
 
 namespace GCRP {
 class WorkerDispatcher;
@@ -65,6 +66,8 @@ public:
     // The tasks and generation are captured under the same lock.
     std::pair<uint64_t, std::vector<Task>> taskSnapshot() const;
     uint64_t taskGeneration() const;
+    nlohmann::json statusCounts() const;
+    uint64_t visitTasks(const std::function<void(const Task&)>& visitor,const std::string& batch_id="") const;
     std::vector<Task> getTasksByStatus(TaskStatus status) const;
 
     Scheduler(const Scheduler&) = delete;

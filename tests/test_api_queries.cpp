@@ -26,6 +26,12 @@ int main() { return testMain([] {
     };
     const auto empty = nlohmann::json::object();
     CHECK(route("query_capabilities", empty)["result"]["features"]["remote_cancel"] == false);
+    const auto capabilities=route("query_capabilities",empty)["result"];
+    CHECK(capabilities["features"]["administration_disabled"]==true);
+    for(const auto& op:capabilities["operations"])CHECK(op!="control_workers");
+    for(const auto action:{"pause","resume","update"}){
+        CHECK(route("control_workers",{{"machine_id","host"},{"action",action},{"operation_id","blocked"},{"scope","all"}})["code"]==3);
+    }
     CHECK(route("query_catalog",empty)["code"]==0);
     CHECK(route("query_catalog",{{"path","/etc"}})["code"]==1);
     CHECK(route("query_tasks", empty)["result"]["items"].empty());
@@ -79,4 +85,12 @@ int main() { return testMain([] {
     CHECK(summary.dump().size()<=8192);CHECK(summary["summary_truncated"]==true);
     payload["case"]=std::string(5000,'x');fixture.setPayload(payload);summary=Api::taskListSummary(fixture);
     CHECK(!summary["payload"].contains("case"));CHECK(summary["summary_truncated"]==true);
+    CHECK(workers.registerWorker("restricted-slot1","restricted",1,"restricted","slot1"));
+    workers.setControlSupported("restricted-slot1",true);
+    CHECK(workers.control(false,"restricted-slot1","update","saved-before-upgrade","test2").has_value());
+    ProtocolMessage heartbeat;heartbeat.type=MessageType::WORKER_HEARTBEAT;heartbeat.request_id=99;
+    heartbeat.data={{"worker_id","restricted-slot1"}};
+    const auto management=router.handle(heartbeat).data;
+    CHECK(management["code"]==0);CHECK(management["result"]["command"].is_null());
+    CHECK(management["result"]["administration_disabled"]==true);
 }); }

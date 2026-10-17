@@ -50,7 +50,7 @@ make
 python3 -B -u worker/slot_manager.py
 python3 -B -u server/clock.py --check-only
 python3 -B -u tools/intranet_qt_smoke.py --show-demo
-./build/gui/bin/gcrp_gui --config config/gcrp.conf
+./build/gui/bin/gcrp_gui --ip 192.168.10.11 --port 8080
 ```
 
 With `-DGCRP_BUILD_QT_GUI=ON` in the main build, GUI is instead `build/bin/gcrp_gui`.

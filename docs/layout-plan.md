@@ -18,7 +18,7 @@ docs/
 
 ## 两份配置，不设 common.conf 或 gui.conf
 
-Server、CLI、GUI、clock 和目录导出默认读取 server.conf；Worker、slot_manager 及工作机验收入口默认读取 worker.conf。
+Server、CLI、clock 和目录导出默认读取 server.conf；Worker、slot_manager 及工作机验收入口默认读取 worker.conf。GUI 只通过 `--ip 地址 --port 端口` 连接，不读取配置文件。
 GCRP_CONFIG 显式指定优先；空值或不存在文件报错，不悄悄回退。自动发现从当前目录向上查找，每层先找角色配置，后找旧 gcrp.conf；Qt 额外从可执行文件目录查找。
 GUI 读取 Server 配置中的连接/展示参数，业务数据仍从网络接口获取。
 

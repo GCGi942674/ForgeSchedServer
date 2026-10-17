@@ -136,10 +136,35 @@ StateStore::~StateStore() {
     if (lock_fd_ >= 0) ::close(lock_fd_);
 }
 
-std::vector<PersistedTask> StateStore::loadTasks() const {
+std::pair<TaskId,uint64_t> StateStore::highWaterMarks() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    Statement rows(db_, "SELECT task_id,task_type,target,revision,priority,status,payload_json,execution_json,COALESCE(worker_id,''),retry_count,queue_sequence,COALESCE(run_id,''),recovery_required,created_at_ms,COALESCE(started_at_ms,0),COALESCE(finished_at_ms,0) FROM tasks ORDER BY task_id");
+    Statement query(db_,"SELECT COALESCE(MAX(task_id),0),COALESCE(MAX(queue_sequence),0) FROM tasks");
+    check(sqlite3_step(query.value),db_);
+    return {static_cast<TaskId>(sqlite3_column_int64(query.value,0)),static_cast<uint64_t>(sqlite3_column_int64(query.value,1))};
+}
+
+nlohmann::json StateStore::statusCounts() const {
+    std::lock_guard<std::mutex> lock(mutex_);nlohmann::json result=nlohmann::json::object();
+    Statement query(db_,"SELECT status,COUNT(*) FROM tasks GROUP BY status");
+    for(;;){auto step=sqlite3_step(query.value);if(step==SQLITE_DONE)break;check(step,db_);result[column(query.value,0)]=sqlite3_column_int64(query.value,1);}
+    return result;
+}
+
+std::vector<PersistedTask> StateStore::loadTasks(TaskId id, bool active_only,const std::string& batch_id) const {
     std::vector<PersistedTask> result;
+    visitTasks([&](Task&& task,uint64_t sequence){result.push_back({std::move(task),sequence});},id,active_only,batch_id);
+    return result;
+}
+
+void StateStore::visitTasks(const std::function<void(Task&&,uint64_t)>& visitor,TaskId id,bool active_only,const std::string& batch_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string sql="SELECT task_id,task_type,target,revision,priority,status,payload_json,execution_json,COALESCE(worker_id,''),retry_count,queue_sequence,COALESCE(run_id,''),recovery_required,created_at_ms,COALESCE(started_at_ms,0),COALESCE(finished_at_ms,0) FROM tasks WHERE 1=1";
+    if(id)sql+=" AND task_id=?";
+    if(active_only)sql+=" AND status IN ('PENDING','QUEUED','ASSIGNED','RUNNING')";
+    if(!batch_id.empty())sql+=" AND batch_id=?";
+    sql+=" ORDER BY task_id";Statement rows(db_,sql.c_str());int parameter=1;
+    if(id)rows.number(parameter++,checkedId(id));
+    if(!batch_id.empty())rows.text(parameter,batch_id);
     while (true) {
         int step = sqlite3_step(rows.value);
         if (step == SQLITE_DONE) break;
@@ -159,9 +184,8 @@ std::vector<PersistedTask> StateStore::loadTasks() const {
                      fromMillis(sqlite3_column_int64(rows.value, 13)),
                      fromMillis(sqlite3_column_int64(rows.value, 14)),
                      fromMillis(sqlite3_column_int64(rows.value, 15)));
-        result.push_back({std::move(task), sequence});
+        visitor(std::move(task), sequence);
     }
-    return result;
 }
 
 std::vector<std::string> StateStore::loadStoppedBatches() const {

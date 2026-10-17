@@ -205,11 +205,23 @@ class Worker:
         if not path.exists():
             return
         report = json.loads(path.read_text(encoding="utf-8"))
+        archive = report.pop("_archive", None)
         if (not isinstance(report, dict) or report.get("worker_id") != self.args.worker_id or
                 type(report.get("task_id")) is not int or
                 report.get("status") not in ("SUCCEEDED", "FAILED", "TIMEOUT") or
                 not isinstance(report.get("message"), str)):
             raise RuntimeError("invalid pending report; inspect " + str(path))
+        if archive is not None:
+            try:
+                directory = Path(archive["directory"])
+                if (directory.is_symlink() or not directory.is_dir() or
+                        self.args.output.resolve() not in directory.resolve().parents):
+                    raise RuntimeError("invalid archive directory in pending report")
+                self.queue_logs(archive["assignment"], directory)
+            except OSError as error:
+                # The durable result outbox protects both the files and retry
+                # intent. Never acknowledge completion without an upload intent.
+                raise TransportError("archive queue pending: " + str(error)) from error
         self.request("task_result", report)
         # The outbox is authoritative if a crash leaves both files behind.
         remove(self.active_path())
@@ -236,8 +248,15 @@ class Worker:
         if not files:
             return
         path = self.args.output / ("pending-logs-" + run_id + ".json")
-        if path.exists() or path.is_symlink():
-            raise RuntimeError("duplicate log outbox: " + str(path))
+        if path.is_symlink():
+            raise RuntimeError("unsafe log outbox: " + str(path))
+        if path.exists():
+            previous = json.loads(path.read_text(encoding="utf-8"))
+            if (previous.get("task_id") != assignment["task_id"] or
+                    previous.get("run_id") != run_id or previous.get("worker_id") != self.args.worker_id or
+                    previous.get("directory") != str(directory.resolve()) or previous.get("files") != files):
+                raise RuntimeError("conflicting log outbox: " + str(path))
+            return
         write_json(path, dict(task_id=assignment["task_id"], run_id=run_id,
                               worker_id=self.args.worker_id, directory=str(directory.resolve()),
                               files=files))
@@ -410,10 +429,7 @@ class Worker:
                       status=status, message=json.dumps(result))
         if assignment.get("run_id"):
             report["run_id"] = assignment["run_id"]
-        try:
-            self.queue_logs(assignment, directory)
-        except (RuntimeError, OSError, ValueError) as error:
-            print("[WORKER] log archive queue failed: " + str(error), flush=True)
+        report["_archive"] = dict(assignment=assignment, directory=str(directory.resolve()))
         self.save_report(report)
         # The server can send the next assignment before acknowledging this result.
         self.assigned = None

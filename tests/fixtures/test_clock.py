@@ -91,6 +91,8 @@ class ClockTests(unittest.TestCase):
                 return {"pending": 0, "queued": 0, "assigned": 0, "running": 0, "total": 0}
             if kind == "query_task":
                 return {"status": "SUCCEEDED"}
+            if kind == "query_batch":
+                return {"complete": True}
             self.assertEqual(data["payload"]["spec_version"], 2)
             return {"task_id": 101}
         with mock.patch.object(clock, "request", side_effect=reply):
@@ -126,6 +128,7 @@ class ClockTests(unittest.TestCase):
     def test_stop_during_submission_records_known_tasks(self):
         self.yaml.write_text(yaml.safe_dump({"tasks": [
             {"template": "route", "target": str(self.runlist)},
+            {"template": "route", "target": str(self.runlist)},
             {"template": "route", "target": str(self.runlist)}]}))
         submitted = []
         def reply(_, kind, data):
@@ -133,19 +136,22 @@ class ClockTests(unittest.TestCase):
                 return {"pending": 0, "queued": 0, "assigned": 0, "running": 0, "total": 0}
             if kind == "query_task":
                 return {"status": "SUCCEEDED"}
+            if kind == "query_batch":
+                return {"complete": True}
             submitted.append(data["payload"]["context"]["batch_id"])
             if len(submitted) == 2:
                 raise clock.BatchStopped("batch stopped")
-            return {"task_id": 101}
+            return {"task_id": 100 + len(submitted)}
         with mock.patch.object(clock, "request", side_effect=reply):
             self.assertEqual(clock.run(self.config, interval=0), 0)
             self.assertEqual(clock.run(self.config, interval=0), 0)
         state = json.loads((self.root / "state.json").read_text())
-        self.assertEqual(state["phase"], "stopped")
+        self.assertEqual(state["phase"], "complete")
         self.assertFalse(state["uncertain"])
-        self.assertEqual(state["task_ids"], [101])
-        self.assertEqual(state["batch_id"], submitted[0])
-        self.assertEqual(submitted, [submitted[0], submitted[0]])
+        self.assertEqual(state["task_ids"], [101, 103])
+        self.assertTrue(submitted[0].startswith(state["batch_id"]))
+        self.assertNotEqual(submitted[0], submitted[1])
+        self.assertEqual(state["stopped_groups"], [submitted[1]])
 
 
 if __name__ == "__main__":

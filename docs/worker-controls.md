@@ -1,6 +1,12 @@
 # 工作机管理 V1
 
-Server、CLI、GUI 使用 server.conf，工作机使用 worker.conf。Server 和 Worker 都需更新到本版本。TCP+JSON framing 不变。
+> 当前发布策略：身份认证另做，远程暂停/恢复接单和 SVN 更新一律由 Server
+> 拒绝，GUI 对应按钮禁用。删除记录继续禁用。下面保留的是底层实现与未来
+> 认证接入后的行为契约，不代表当前能通过 CLI 或网络调用这些操作。
+> 普通任务提交、查询、取消未执行案例不受影响。详见
+> [生产加固与部署注意事项](production-hardening.md)。
+
+Server、CLI 使用 server.conf，工作机使用 worker.conf。GUI 使用 `--ip 地址 --port 端口`，不读取配置文件。Server 和 Worker 都需更新到本版本。TCP+JSON framing 不变。
 
 ## 行为
 

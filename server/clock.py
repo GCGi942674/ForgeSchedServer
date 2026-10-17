@@ -24,8 +24,10 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "worker"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from runtime_config import load_config
 from daily_log import daily_log
+from backup_database import backup_database
 
 MAX_FRAME = 1024 * 1024
 ZIP_NAME = re.compile(r"Galax[Cc]ore_(\d+)\.zip\Z")
@@ -153,7 +155,7 @@ def build_plan(config):
     revision, archive = choose_revision(source, entries, artifact_root)
     batch_id = date.today().isoformat() + "-" + revision
     plan = []
-    for entry in entries:
+    for task_index, entry in enumerate(entries):
         name = entry["template"]
         template = load_template(templates, name)
         retry = entry.get("max_retry", template.get("max_retry", 0))
@@ -178,7 +180,7 @@ def build_plan(config):
                                      "timeout_seconds": timeout,
                                      "flow_config": dict(template["flow_config"]),
                                      "context": {"template": name, "suite": suite,
-                                                 "name": task_name, "batch_id": batch_id,
+                                                 "name": task_name, "batch_id": batch_id + "-task-" + str(task_index + 1),
                                                  "source": "scheduled", "date": batch_id[:10]}}})
     if not plan:
         raise ValueError("empty task plan")
@@ -269,10 +271,16 @@ def run(config, dry_run=False, check_only=False, interval=30):
         if previous and not resume:
             if previous.get("phase") not in ("complete", "stopped") or previous.get("uncertain"):
                 raise RuntimeError("previous submission uncertain; inspect " + str(state_path))
-            for task_id in previous.get("task_ids", []):
-                task = request(config, "query_task", {"task_id": task_id})
-                if task["status"] not in TERMINAL:
-                    raise RuntimeError("previous task is unfinished: {}".format(task_id))
+            if previous.get('group_ids'):
+                for group_id in previous['group_ids']:
+                    group = request(config, 'query_batch', {'batch_id': group_id})
+                    if not group.get('complete'):
+                        raise RuntimeError('previous daily task is unfinished: ' + group_id)
+            else:
+                for task_id in previous.get("task_ids", []):
+                    task = request(config, "query_task", {"task_id": task_id})
+                    if task["status"] not in TERMINAL:
+                        raise RuntimeError("previous task is unfinished: {}".format(task_id))
             if previous.get("day") == date.today().isoformat():
                 print("SKIPPED: suite {} today".format(
                     "stopped" if previous.get("phase") == "stopped" else "already submitted"))
@@ -291,33 +299,47 @@ def run(config, dry_run=False, check_only=False, interval=30):
         else:
             revision, archive, plan = build_plan(config)
             batch_id = date.today().isoformat() + "-" + revision + "-" + uuid.uuid4().hex
+            groups = {}
             for entry in plan:
-                entry["payload"]["context"]["batch_id"] = batch_id
+                context = entry["payload"]["context"]
+                old_group = context["batch_id"]
+                if old_group not in groups:
+                    groups[old_group] = batch_id + "-task-" + str(len(groups) + 1)
+                context["batch_id"] = groups[old_group]
             for index, entry in enumerate(plan):
                 entry["submission_key"] = batch_id + ":" + str(index)
             atomic_text(plan_path, json.dumps(plan, sort_keys=True))
             state = {"day": date.today().isoformat(), "revision": revision,
                      "archive": str(archive), "batch_id": batch_id, "phase": "submitting",
-                     "task_ids": [], "uncertain": False, "planned": len(plan)}
+                     "task_ids": [], "uncertain": False, "planned": len(plan),
+                     "group_ids": list(groups.values())}
         protect = required_path(config, "server.protect_versions_file")
+        if config.get('database.path') and config.get('database.backup_enabled', 'true') == 'true':
+            print('[BACKUP] ' + str(backup_database(config)), flush=True)
         atomic_text(protect, revision + "\n")
         atomic_text(state_path, json.dumps(state, sort_keys=True))
         print("BATCH: " + batch_id, flush=True)
-        for index in range(len(state["task_ids"]), len(plan)):
+        for index in range(state.get("next_index", len(state["task_ids"])), len(plan)):
             entry = plan[index]
+            group_id = entry["payload"]["context"]["batch_id"]
+            if group_id in state.get("stopped_groups", []):
+                state["next_index"] = index + 1
+                atomic_text(state_path, json.dumps(state, sort_keys=True))
+                continue
             state["uncertain"] = True
             atomic_text(state_path, json.dumps(state, sort_keys=True))
             try:
                 answer = request(config, "submit_task", entry)
             except BatchStopped:
                 state["uncertain"] = False
-                state["phase"] = "stopped"
+                state.setdefault("stopped_groups", []).append(group_id)
+                state["next_index"] = index + 1
                 atomic_text(state_path, json.dumps(state, sort_keys=True))
-                print("STOPPED: batch {} accepted {}/{} cases".format(
-                    batch_id, len(state["task_ids"]), len(plan)), flush=True)
-                return 0
+                print("STOPPED: task {}; continuing other Tasks.yaml entries".format(group_id), flush=True)
+                continue
             task_id = answer["task_id"]
             state["task_ids"].append(task_id)
+            state["next_index"] = index + 1
             state["uncertain"] = False
             atomic_text(state_path, json.dumps(state, sort_keys=True))
             if index == 0 or (index + 1) % 100 == 0 or index + 1 == len(plan):
@@ -328,7 +350,7 @@ def run(config, dry_run=False, check_only=False, interval=30):
                 time.sleep(interval)
         state["phase"] = "complete"
         atomic_text(state_path, json.dumps(state, sort_keys=True))
-        print("SUBMITTED: {} tasks at revision {}".format(len(plan), revision))
+        print("SUBMITTED: {} testcase records at revision {}; stopped task groups={}".format(len(state['task_ids']), revision, len(state.get('stopped_groups', []))))
     return 0
 
 
